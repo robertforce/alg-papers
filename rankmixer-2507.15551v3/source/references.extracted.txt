@@ -1,0 +1,185 @@
+Feed Recommendation for 8 months are shown on the Table 4 1and
+the result of Advertising is shown on the Table 5.
+  RankMixer was deployed and evaluated in the three personalised-
+ranking application including the Feed Recommendation (RankMixer-
+1B) and Advertising (RankMixer-1B). RankMixer delivered statisti-
+cally significant uplifts on all business-critical metrics. We can also
+observe that the improvements on low-active users are largest on
+the Table 4 compared to other activeness level user groups with
+over 1.7412% Active Days improvements, which demonstrates the
+model’s strong generalization capability. These results demonstrate
+that the RankMixer as a unified backbone generalises reliably to
+different application scenarios.
+
+5  Conclusion
+In this article, we introduce our latest RankMixer model that has
+been fully deployed on Douyin Feed ranking. It combines the model
+designs for heterogeneous feature interactions and the highly par-
+allelizable architecture for serving efficiency. Experiments have
+demonstrated its superior performance and steep scaling law. After
+its full deployment on the Douyin app, it has obtained 0.3% and 1%
+increase on active days and App duartion.
+
+References
+ [1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Floren-
+      cia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal
+     Anadkat, et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774
+      (2023).
+ [2] Newsha Ardalani, Carole-Jean Wu, Zeliang Chen, Bhargav Bhushanam, and
+    Adnan Aziz. 2022. Understanding scaling laws for recommendation models.
+     arXiv preprint arXiv:2208.08489 (2022).
+ [3] Fedor Borisyuk, Mingzhou Zhou, Qingquan Song, Siyu Zhu, Birjodh Tiwana,
+    Ganesh Parameswaran, Siddharth Dangi, Lars Hertel, Qiang Charles Xiao, Xi-
+     aochen Hou, Yunbo Ouyang, Aman Gupta, Sheallika Singh, Dan Liu, Hailing
+     Cheng, Lei Le, Jonathan Hung, S. Sathiya Keerthi, Ruoyan Wang, Fengyu Zhang,
+     Mohit Kothari, Chen Zhu, Daqi Sun, Yun Dai, Xun Luan, Sirou Zhu, Zhiwei Wang,
+     Neil Daftary, Qianqi Shen, Chengming Jiang, Haichao Wei, Maneesh Varshney,
+    Amol Ghoting, and Souvik Ghosh. 2024. LiRank: Industrial Large Scale Rank-
+     ing Models at LinkedIn. In Proceedings of the 30th ACM SIGKDD Conference on
+     Knowledge Discovery and Data Mining, KDD 2024, Barcelona, Spain, August 25-29,
+      2024. 4804–4815.
+ [4] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen,
+    Hui Lu, Wenlin Zhao, Lele Yu, Xionghang Xie, Shiru Ren, Xiang Sun, Yaocheng
+     Tan, Peng Xu, Yuchao Zheng, and Di Wu. 2025. LONGER: Scaling Up Long
+     Sequence Modeling in Industrial Recommenders. arXiv:2505.04421 [cs.IR] https:
+     //arxiv.org/abs/2505.04421
+ [5] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra,
+     Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, et al.
+     2016. Wide & deep learning for recommender systems. In Proceedings of the 1st
+     workshop on deep learning for recommender systems. 7–10.
+ [6] Sharad Chitlangia, Krishna Reddy Kesari, and Rajat Agarwal. 2023.  Scaling
+     generative pre-training for user ad activity sequences. (2023).
+ [7] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks
+      for youtube recommendations. In Proceedings of the 10th ACM conference on
+     recommender systems. 191–198.
+ [8] Alexey Dosovitskiy. 2020. An image is worth 16x16 words: Transformers for
+     image recognition at scale. arXiv preprint arXiv:2010.11929 (2020).
+ [9] Yan Fang, Jingtao Zhan, Qingyao Ai, Jiaxin Mao, Weihang Su, Jia Chen, and Yiqun
+      Liu. 2024. Scaling laws for dense retrieval. In Proceedings of the 47th International
+   ACM SIGIR Conference on Research and Development in Information Retrieval.
+     1339–1349.
+[10] Huan Gui, Ruoxi Wang, Ke Yin, Long Jin, Maciej Kula, Taibai Xu, Lichan Hong,
+    and Ed H Chi. 2023. Hiformer: Heterogeneous Feature Interactions Learning
+     with Transformers for Recommender Systems. arXiv preprint arXiv:2311.05884
+      (2023).
+
+
+
+1This result was updated on July 24, 2025, since the long-term experiments indicating
+the gains had not yet saturated.
+[11] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017.
+    DeepFM: a factorization-machine based neural network for CTR prediction. arXiv
+      preprint arXiv:1703.04247 (2017).
+[12] Wei Guo, Hao Wang, Luankang Zhang, Jin Yao Chin, Zhongzhou Liu, Kai
+     Cheng, Qiushi Pan, Yi Quan Lee, Wanqi Xue, Tingjia Shen, et al. 2024. Scal-
+     ing New Frontiers: Insights into Large Recommendation Models. arXiv preprint
+     arXiv:2412.00714 (2024).
+[13] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual
+     learning for image recognition. In Proceedings of the IEEE conference on computer
+      vision and pattern recognition. 770–778.
+[14] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya,
+     Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes
+     Welbl, Aidan Clark, et al. 2022. Training compute-optimal large language models.
+     arXiv preprint arXiv:2203.15556 (2022).
+[15] Yanhua Huang, Hangyu Wang, Yiyun Miao, Ruiwen Xu, Lei Zhang, and Weinan
+     Zhang. 2022. Neural statistics for click-through rate prediction. In Proceedings
+      of the 45th International ACM SIGIR Conference on Research and Development in
+     Information Retrieval. 1849–1853.
+[16] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess,
+    Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020.
+     Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 (2020).
+[17] Zekun Li, Zeyu Cui, Shu Wu, Xiaoyu Zhang, and Liang Wang. 2019. Fi-gnn:
+    Modeling feature interactions via graph neural networks for ctr prediction. In
+     Proceedings of the 28th ACM international conference on information and knowledge
+     management. 539–548.
+[18] Jianxun Lian, Xiaohuan Zhou, Fuzheng Zhang, Zhongxia Chen, Xing Xie, and
+    Guangzhong Sun. 2018. xdeepfm: Combining explicit and implicit feature in-
+     teractions for recommender systems. In Proceedings of the 24th ACM SIGKDD
+      international conference on knowledge discovery & data mining. 1754–1763.
+[19] Jianghao Lin, Xinyi Dai, Yunjia Xi, Weiwen Liu, Bo Chen, Hao Zhang, Yong Liu,
+    Chuhan Wu, Xiangyang Li, Chenxu Zhu, et al. 2023. How can recommender
+     systems benefit from large language models: A survey. ACM Transactions on
+     Information Systems (2023).
+[20] Bin Liu, Ruiming Tang, Yingzhi Chen, Jinkai Yu, Huifeng Guo, and Yuzhou Zhang.
+     2019. Feature generation by convolutional neural network for click-through rate
+      prediction. In The World Wide Web Conference. 1119–1129.
+[21] Junwei Pan, Wei Xue, Ximei Wang, Haibin Yu, Xun Liu, Shijie Quan, Xueming Qiu,
+    Dapeng Liu, Lei Xiao, and Jie Jiang. 2024. Ads recommendation in a collapsed
+    and entangled world. In Proceedings of the 30th ACM SIGKDD Conference on
+     Knowledge Discovery and Data Mining. 5566–5577.
+[22] Yanru Qu, Bohui Fang, Weinan Zhang, Ruiming Tang, Minzhe Niu, Huifeng Guo,
+    Yong Yu, and Xiuqiang He. 2018. Product-based neural networks for user response
+     prediction over multi-field categorical data. ACM Transactions on Information
+     Systems (TOIS) 37, 1 (2018), 1–35.
+[23] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh,
+     Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark,
+      et al. 2021. Learning transferable visual models from natural language supervision.
+     In International conference on machine learning. PMLR, 8748–8763.
+[24] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec
+     Radford, Mark Chen, and Ilya Sutskever. 2021. Zero-shot text-to-image generation.
+     In International conference on machine learning. Pmlr, 8821–8831.
+[25] Steffen Rendle, Walid Krichene, Li Zhang, and John Anderson. 2020. Neural
+      collaborative filtering vs. matrix factorization revisited. In Proceedings of the 14th
+   ACM Conference on Recommender Systems. 240–248.
+[26] Ying Shan, T Ryan Hoens, Jian Jiao, Haijing Wang, Dong Yu, and JC Mao. 2016.
+    Deep crossing: Web-scale modeling without manually crafted combinatorial
+      features. In Proceedings of the 22nd ACM SIGKDD international conference on
+     knowledge discovery and data mining. 255–262.
+[27] Kyuyong Shin, Hanock Kwak, Su Young Kim, Max Nihlén Ramström, Jisu Jeong,
+    Jung-Woo Ha, and Kyung-Min Kim. 2023.  Scaling law for recommendation
+     models: Towards general-purpose user representations. In Proceedings of the
+    AAAI Conference on Artificial Intelligence, Vol. 37. 4596–4604.
+[28] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang,
+    and Jian Tang. 2019. Autoint: Automatic feature interaction learning via self-
+      attentive neural networks. In Proceedings of the 28th ACM international conference
+     on information and knowledge management. 1161–1170.
+[29] Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupati-
+      raju, Shreya Pathak, Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale, Juliette
+     Love, et al. 2024. Gemma: Open models based on gemini research and technology.
+     arXiv preprint arXiv:2403.08295 (2024).
+[30] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yas-
+    mine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhos-
+      ale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv
+      preprint arXiv:2307.09288 (2023).
+[31] Hangyu Wang, Jianghao Lin, Xiangyang Li, Bo Chen, Chenxu Zhu, Ruiming Tang,
+    Weinan Zhang, and Yong Yu. 2024. FLIP: Fine-grained Alignment between ID-
+     based Models and Pretrained Language Models for CTR Prediction. In Proceedings
+      of the 18th ACM Conference on Recommender Systems. 94–104.
+[32] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & cross network
+      for ad click predictions. In Proceedings of the ADKDD’17. 1–7.
+[33] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,
+    and Ed Chi. 2021. Dcn v2: Improved deep & cross network and practical lessons
+      for web-scale learning to rank systems. In Proceedings of the web conference 2021.
+     1785–1797.
+[34] Yunli Wang, Zixuan Yang, Zhen Zhang, Zhiqiang Wang, Jian Yang, Shiyang Wen,
+    Peng Jiang, and Kun Gai. 2024. Scaling Laws for Online Advertisement Retrieval.
+     arXiv preprint arXiv:2411.13322 (2024).
+[35] Ziteng Wang, Jianfei Chen, and Jun Zhu. 2024. ReMoE: Fully Differentiable
+     Mixture-of-Experts with ReLU Routing. CoRR abs/2412.14711 (2024).  doi:10.
+     48550/ARXIV.2412.14711 arXiv:2412.14711
+[36]  Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhao-
+       jie Gong, Fangda Gu, Jiayuan He, et al. [n. d.]. Actions Speak Louder than Words:
+     Trillion-Parameter Sequential Transducers for Generative Recommendations. In
+      Forty-first International Conference on Machine Learning.
+[37] Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lucas Beyer. 2022. Scaling
+     vision transformers. In Proceedings of the IEEE/CVF conference on computer vision
+    and pattern recognition. 12104–12113.
+[38] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Shen Li, Yanli Zhao,
+    Yuchen Hao, Yantao Yao, Ellie Dingqiao Wen, et al. [n. d.]. Wukong: Towards a
+     Scaling Law for Large-Scale Recommendation. In Forty-first International Confer-
+     ence on Machine Learning.
+[39] Buyun Zhang, Liang Luo, Xi Liu, Jay Li, Zeliang Chen, Weilin Zhang, Xiaohan
+     Wei, Yuchen Hao, Michael Tsang, Wenjun Wang, et al. 2022. DHEN: A deep
+    and hierarchical ensemble network for large-scale click-through rate prediction.
+     arXiv preprint arXiv:2203.11014 (2022).
+[40] Gaowei Zhang, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, and Ji-
+    Rong Wen. 2024. Scaling law of large sequential recommendation models. In
+     Proceedings of the 18th ACM Conference on Recommender Systems. 444–453.
+[41] Weinan Zhang, Jiarui Qin, Wei Guo, Ruiming Tang, and Xiuqiang He. 2021. Deep
+     learning for click-through rate estimation. arXiv preprint arXiv:2104.10584 (2021).
+[42] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui
+     Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep Interest Network for Click-
+    Through Rate Prediction. In Proceedings of the 24th ACM SIGKDD International
+     Conference on Knowledge Discovery & Data Mining (London, United Kingdom)
+    (KDD ’18). Association for Computing Machinery, New York, NY, USA, 1059–1068.
+     doi:10.1145/3219819.3219823

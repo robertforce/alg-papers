@@ -1,0 +1,567 @@
+
+===== PAGE 1 =====
+              RankMixer: Scaling Up Ranking Models in
+                         Industrial Recommenders
+               Jie Zhu*, Zhifang Fan*, Xiaoxie Zhu*, Yuchen Jiang*, Hangyu Wang, Xintian Han, Haoran Ding,
+           Xinmin Wang, Wenlin Zhao, Zhen Gong, Huizhi Yang, Zheng Chai, Zhe Chen, Yuchao Zheng,
+                  Qiwei Chen†, Feng Zhang, Xun Zhou, Peng Xu, Xiao Yang, Di Wu, Zuotao Liu
+                                                        ByteDance
+                   {zhujie.zj, zhuxiaoxie.777, jiangyuchen.jyc, wanghangyu.123, hanxintian, dinghaoran, xinmin.wang, zhaowenlin,
+              gongzhen.666, yanghuizhi, chaizheng.cz, chenzhe.john, zhengyuchao.yc, feng.zhang, zhouxun, xupeng, wuqi.shaw,
+                                 di.wu, michael.liu}@bytedance.com, {fanzhifangfzf, chenqiwei05}@gmail.com
+
+        Abstract                                                        behavior features and content features [19, 41]. The state-of-the-art
+          Recent progress on large language models (LLMs) has spurred in-     recommendation methods are based on Deep Learning Recommen-
+            terest in scaling up recommendation systems, yet two practical      dation Models (DLRMs), which flexibly capture feature interactions
+                                                                            based on neural networks as the dense interaction layers above the2025    obstacles remain. First, training and serving cost on industrial Rec-
+         ommenders must respect strict latency bounds and high QPS de-      input embeddings from features. The Dense interaction layer in
+          mands. Second, most human-designed feature-crossing modules in    DLRM is critical for RS performance and diverse model structuresJul    ranking models were inherited from the CPU era and fail to exploit      are proposed [7, 11, 33, 38, 42].
+         modern GPUs, resulting in low Model Flops Utilization (MFU) and        Driven by advancements in Large Language Models (LLMs) that
+                                                                                       benefit from increasing parameters [1, 14, 16], scaling up DLRMs to26    poor scalability. We introduce RankMixer, a hardware-aware model
+           design tailored towards a unified and scalable feature-interaction      take full advantage of the volume of data is an urgent need. Previous
+            architecture. RankMixer retains the transformer’s high parallelism      research has yielded numerous outcomes on the scaling DLRMs,
+           while replacing quadratic self-attention with multi-head token mix-      early studies [2, 6, 40] just widen or stack feature interaction layers
+           ing module for higher efficiency. Besides, RankMixer maintains      without modifying the structure. The benefits achieved in this way
+          both the modeling for distinct feature subspaces and cross-feature-      are modest and occasionally negative [18, 32]. Then the follow-up[cs.IR]    space interactions with Per-token FFNs. We further extend it to       efforts, such as DHEN [39] and Wukong [38], focus on design-
+          one billion parameters with a Sparse-MoE variant for higher ROI.      ing innovative DNN structures to boost the scaling performance.
+       A dynamic routing strategy is adapted to address the inadequacy     However, leveraging model scale to improve performance in rec-
+          and imbalance of experts training. Experiments show RankMixer’s     ommendation presents unique practical challenges. Unlike NLP or
+           superior scaling abilities on a trillion-scale production dataset. By      vision tasks, industrial-scale recommendation systems must strictly
+           replacing previously diverse handcrafted low-MFU modules with      adhere to tight latency constraints and support extremely high QPS
+          RankMixer, we boost the model MFU from 4.5% to 45%, and scale      (queries per second). As a result, the core challenge lies in finding
+          our online ranking model parameters by two orders of magnitude      a sweet spot that balances model effectiveness and computational
+          while maintaining roughly the same inference latency. We verify       efficiency.
+          RankMixer’s universality with online A/B tests across two core ap-          Historically, the architecture of ranking models in recommenda-
+            plication scenarios (Recommendation and Advertisement). Finally,      tion has been shaped by CPU-era design principles. These models
+        we launch 1B Dense-Parameters RankMixer for full traffic serving       typically relied on combining heterogeneous diverse handcrafted
+          without increasing the serving cost, which improves user active       cross-feature modules to extract feature interactions, but many of
+          days by 0.3% and total in-app usage duration by 1.08%.                  their core operators are memory-bound rather than compute-bound
+                                                                 on modern GPUs, leading to poor GPU parallelism and extremely
+                                                                   low MFU(Model Flops Utilization) often in the single-digit per-      CCS Concepts
+                                                                            centage range.Moreover, since the computational cost of CPU-eraarXiv:2507.15551v3     • Information systems →Recommender systems.                                                                      models was approximately proportional to the number of param-
+                                                                                            eters, the potential ROI from aggressive scaling—as suggested by
+       Keywords                                                                                    scaling laws—was difficult to realize in practice.
+           Scaling Laws, Ranking Model, Recommender System                                                                                    In summary, the research on scaling laws of DLRMs must over-
+                                                               come the following problems:
+        1  Introduction                                                                     • Architectures should be hardware-aligned, maximizing MFU and
+         Recommender System (RS) is essential in the process of distribut-       compute throughput on modern GPUs.
+           ing information. As a significant machine learning scenario, RS                                                                     • The model design must leverage the characteristics of recom-
+            predicts users’ behaviors towards items based on a large amount        mendation data, such as the heterogeneous feature spaces and
+            of multi-field feature data, including numerical features such as di-         personalized cross-feature interactions among hundreds of fields.
+           verse statistics, categorical features such as user and item IDs, user                                                                      To address these challenges, we propose a hardware-aware model
+                 * Equal Contributions.                                                   design method, RankMixer. The core design of RankMixer is based
+            † Corresponding authors.                                        on two scalable components: 1. Multi-head token mixing achieves
+===== PAGE 2 =====
+ Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                       Zhifang Fan et al.
+
+
+ cross-token feature interactions only through the parameter-free       interactions [22, 25]. Explicit cross methods design different opera-
+ operator. This strategy outperforms the self-attention mechanism       tors to explicitly capture high-order feature interactions, such as
+ in terms of performance and computational efficiency. 2. Per-token    PNN [22], DCN [32] and its successor DCNv2 [33], xDeepFM [18],
+ feed-forward networks (FFNs) expand model capacity significantly    FGCNN [20] and FiGNN [17]. AutoInt [28] and Hiformer [10] em-
+ and tackle inter-feature-space domination problem by allocating      ploy attention mechanism with residual connections to learn com-
+ independent parameters for different feature subspace modeling.      plex interactions. DHEN [39] proposes to combine multiple inter-
+ These FFNs also align well with the recommendation data patterns,      action operators together. Despite improving accuracy, these new
+ enabling a better scaling behavior. To further boost the ROI of       architectures increase the model latency and memory consumption
+ large-scale models, we extend the per-token FFN modules into a     and their model size is relatively small.
+ Sparse Mixture-of-Experts (MoE) structure. By dynamically activat-         Scaling law has emerged as a fundamental theme in deep learn-
+ ing only a subset of experts per token for different data, we can      ing and a pivotal catalyst for numerous breakthroughs over the past
+ significantly increase the model capacity with a minimal increase in      decade, particularly in Natural Language Processing (NLP) [14, 16],
+ computational cost. RankMixer adopts a highly parallel architecture     Computer Vision (CV) [8, 37], and multi-modality modeling [23, 24],
+ similar to transformers, but overcomes several critical limitations     which describe the power-law correlations between model per-
+ of self-attention based feature-interaction: low training efficiency,     formance and scaling factors, such as model size, data volume,
+ the combinatorial explosion when modeling cross-space ID similar-     and computational capacity [1, 16, 29, 30]. Recently, scaling laws
+ ity and severe memory-bound caused by attention weights matrix.      in recommendation systems have drawn much attention from re-
+At the same time, RankMixer offers greater model capacity and      searchers [12]. Studies have explored the scaling strategy for pre-
+ learning capability under the same Flops compared with Vanilla      training user activity sequences [6], general-purpose user repre-
+ Transformer.                                                           sentations [27, 40] and online retrieval [9, 34]. Wukong [38] stacks
+   In production deployment on Douyin’s recommendation system,     FMs and LCB to learn the feature interactions. Orthogonally, Zhang
+we demonstrate that it is feasible to scale model parameters by       et al. [40] scaled up a sequential recommendation model to 0.8B
+ over 100× while maintaining shorter inference latency compared      parameters. HSTU [36] enhances the scaling effect of Generative
+with previous baseline. This is made possible by the RankMixer     Recommenders (GRs) which focus more on the sequence part.
+ architecture’s ability to decouple parameter growth from FLOPs,
+ and decouple FLOPs growth from actual cost through high MFU    3  Methodology
+ and engineering optimization.
+   The main contributions can be summarized as follows:            3.1  Overall Architecture
+                                                              RankMixer’s overall architecture consists of T input tokens pro-
+• We propose a novel architecture called RankMixer follows a      cessed by L successive RankMixer blocks, followed by an output
+  hardware-aware model-design philosophy. We design the multi-      pooling operator. Each RankMixer block has two main components:
+  head token mixing and per-token FFN strategies to capture hetero-       (1) a Multi-Head Token Mixing layer, and (2) a Per-Token Feed-
+  geneous feature interactions efficiently, and using dynamic rout-     Forward Network (PFFN) layer, as illustrated in Figure 1 . First, the
+  ing strategy to improve the scalability of SparseMoE in RankMixer.      input vector einput is tokenized into 𝑇feature tokens x1, x2, ..., x𝑇,
+• Leveraging levers of high MFU and performance-optimization,     each representing a coherent feature vector. RankMixer blocks
+ we scale the model parameters by 70× without increasing the       iteratively refine token representations for 𝐿layers through:
+  inference cost, including improving MFU and Quantization.
+                                                                         S𝑛−1 = LN (TokenMixing (X𝑛−1) + X𝑛−1) ,• We conduct extensive offline and online experiments and investi-                                                                                                                                                             (1)
+  gate the model’s scaling law on the trillion-scale industrial recom-           X𝑛= LN (PFFN (S𝑛−1) + S𝑛−1) ,
+  mendation dataset. The RankMixer model has been successfully
+                                                            where LN(·) is a layer normalization function, TokenMixing(·) and  deployed on the Douyin Feed Recommendation Ranking for full-
+                                                                PFFN(·) are the multi-head Token Mixing module and the per-   traffic serving, achieving 0.3% and 1.08% increase on active days
+                                                                 token FFN module, X𝑛∈R𝑇×𝐷is the output of the 𝑛-th RankMixer  and App duration, respectively.
+                                                                        block, X0 ∈R𝑇×𝐷is stacked by x1, x2, ..., x𝑇, and 𝐷is the hidden
+                                                               dimension of the model. The output representation ooutput derives
+2  Related Work                                        from the mean pooling of final layers’s representations X𝐿which
+                                                                             will be used to compute the different task’s predictions.
+ Modern recommendation systems are based on Deep Learning Rec-
+ ommendation Models (DLRMs) and how to effectively model the
+ feature interactions is a crucial factor for DLRMs [5, 11, 15, 22, 31,     3.2  Input Layer and Feature Tokenization
+ 33, 39]. Wide&Deep [5] is one of the earliest efforts, which com-     The first thing to build a large-scale recommendation model is to
+ bines the logistic regression (wide part) and DNN (deep part) to      prepare inputs with abundant information, such as User features
+ capture low-order and high-order feature interactions respectively.      include user ID and other user information, candidate features
+DeepFM [11] is another achievement, which integrates the Factor-      include video ID, author ID etc., Sequence Features processed
+ ization Machine (FM) and the DNN. In addition, DeepCross [26]      through Sequence Module [4, 42] to capture temporal interests,
+ is an extension of the residual network [13], aiming to learn auto-      yielding e𝑠and Cross Features. the cross features between the
+ matic feature interactions implicitly. While it has proven to be quite      user and the candidate. All the features will be transformed into
+ challenging to simply rely on DNNs to learn high-order feature     embeddings with diverse dimensions.
+===== PAGE 3 =====
+RankMixer: Scaling Up Ranking Models in Industrial Recommenders                                          Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+
+
+
+                                                                            SMoE variant of PFFN                         output
+                                                      finish          skip     …              like
+
+
+                                                 RankMixer output
+                                                  mean pooling                                          Sparse-MoE
+                              RankMixer Block                                                                   gateloss            𝑃𝐹𝐹𝑁#!      𝑃𝐹𝐹𝑁#"  …    𝑃𝐹𝐹𝑁#$
+                                              Add & Norm
+
+                               …
+
+
+                                      Per-token FFN
+                                 …                                ReLU Routing
+                                 𝑃𝐹𝐹𝑁!       𝑃𝐹𝐹𝑁"              𝑃𝐹𝐹𝑁#
+
+                   L layers
+
+                                                                                                  Token Mixing
+                               …
+                       H Feature tokens
+
+                                              Add & Norm                                  T tokens
+                                                                                                                              T tokens
+
+                                                   Token Mixing
+                                                                                                                                                                                                  Split
+
+                                                                                              D dim                       H  * (D//H) dim
+                                                                                                                                        T
+                                …     T x D
+
+
+
+                                                          Tokenization                              H                         H tokens
+                                                                  Hundreds of feature embedding     tokens
+
+                                                                                                                                       Merge
+                      User Profiles        Video Features     Sequence Features    Interacted Features
+                                                                                                                                                (T*D//H) dim                              (T*D//H) dim
+
+
+
+
+
+Figure 1: The architecture of a RankMixer block. A RankMixer block consists of two modules: Multi-head Token Mixing and
+SMoE based Per-token FFN. The token-mixing module divides each token’s embedding into 𝐻smaller parts (heads), then
+recombines these parts across tokens to create new mixed tokens. This allows information from different features to interact
+with each other.
+
+
+  To enable efficient parallel computation in later stages, embed-     where 𝑒input is the concatenated embedding vector, 𝑑is the fixed
+dings of varying dimensions must be transformed into dimension-     dimension per token, 𝑁is the number of feature-groups, and 𝑇is
+aligned vectors, called feature-tokens. We refer to this embedding      the resulting token count and the Proj function maps the splitted
+alignment process as tokenization. The simplest strategy is assign-     embedding into 𝐷dimension.
+ing one embedding per feature which introduces several challenges
+given typically hundreds of features. Having hundreds of tokens     3.3  RankMixer Block
+inevitably reduces the parameters and computation allocated per
+                                                                                    3.3.1  Multi-head Token Mixing. To facilitate effective informationtoken to small fragments, resulting in insufficient modeling of im-
+                                                            exchange across tokens which is important for feature cross and
+portant features and under-utilization of GPU cores. Conversely,
+                                                                       global information modeling, we introduce the multi-head Token
+too few tokens (e.g. a single token) degrade the model structure
+                                                            Mixing module. Each token is evenly divided into 𝐻heads, with
+into a simple Deep Neural Network (DNN), unable to distinctly
+                                                                    the ℎ-th head of token x𝑡denoted as 𝑥ℎ𝑡:represent diverse feature spaces, which risks dominant features
+overshadowing others.
+                                                                                                  h x(1)𝑡   ∥x(2)𝑡  ∥. . . ∥x(𝐻)𝑡    i = SplitHead (x𝑡) .         (3)  To overcome these issues, we propose a semantic-based tok-
+enization approach with domain knowledge and group features
+                                                              These heads can be seen as projections of the token x𝑡into a lower-into several semantically coherent clusters. These grouped fea-
+                                                                  dimensional feature subspace since recommendation is task takingtures are sequentially concatenated into one embedding vector
+                                                                             different perspectives into considerations. Token Mixing is used to
+𝑒input =  [ 𝑒1;𝑒2; . . . ;𝑒𝑁], and subsequently partitioned into an
+                                                                        fuse these sub-space vector for global feature interactions. Formally,appropriate number of tokens with fixed dimension sizes. Each
+feature token 𝑥𝑖∈R𝐷captures a set of feature embeddings that      the ℎ-th token sℎcorresponding to the ℎ-th head after the multi-
+                                                             head Token Mixing is constructed as:represent a similar semantic aspect.
+
+     x𝑖= Proj(𝑒input 𝑑· (𝑖−1) : 𝑑· 𝑖  ),  𝑖= 1, . . . ,𝑇,      (2)                 sℎ= Concat xℎ1, xℎ2, ..., xℎ𝑇    .                   (4)
+===== PAGE 4 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                       Zhifang Fan et al.
+
+The output of the multi-head Token Mixing module is S ∈R𝐻× 𝑇𝐷𝐻,       splits the inputs and the parameters simultaneously which is good
+which is stacked by all the shuffled tokens s1, s2, ..., s𝐻. In this work,      for learning diversity in different feature sub-spaces.
+we set 𝐻= 𝑇to maintain the same number of tokens after Token
+Mixing for residual connection.
+                                                         3.4  Sparse MoE in RankMixer
+   After a residual connection and normalization module we can
+                                                          To further increase the scaling ROI, we can replace the dense FFNs of
+generate
+                                                                each pertoken with Sparse Mixture-of-Experts (MoE) blocks, so that
+ s1, s2, ..., s𝑇= LN (TokenMixing (x1, x2, ..., x𝑇) + (x1, x2, ..., x𝑇)) ,       the model’s capacity grows while computation cost remains roughly
+                                                                         (5)      constant. Vanilla Sparse-MoE, however, degrades in RankMixer be-
+  Although self-attention has proven highly effective in large lan-      cause: (i) uniform 𝑘-expert routing. Top-𝑘selection treats all fea-
+guage models, we find it to be suboptimal for recommendation       ture tokens equally, wasting the budget on low-information tokens
+systems. In self-attention, attention weights are calculated using     and starving high-information ones, which hinders the model from
+the inner product of tokens. This method works well for NLP, where      capturing differences between tokens. (ii) expert under-training.
+all tokens share a unified embedding space. However, in recommen-     Per-token FFNs already multiply parameters by #tokens; adding
+dation tasks, the feature spaces are inherently heterogeneous. Com-     non-shared experts further explodes the expert count, producing
+puting an inner-product similarity between two heterogeneous se-      highly unbalanced routing and poorly trained experts;
+mantic spaces is notoriously difficult—particularly in recommender      We combine two complementary training strategies to solve the
+systems, where the ID space of the features from user and item side      above problems.
+may contain hundreds of millions of elements. Consequently, ap-
+plying self-attention to such diverse inputs does not outperform the       ReLU Routing. To grant tokens flexible expert counts and main-
+parameter-free multi-head Token Mixing approach and consumes       tain differentiability, we replace the common Top𝑘+softmax with a
+more computations, Memory IO operations and GPU memory us-    ReLU gate plus an adaptive ℓ1 penalty [35]. Given the 𝑗-th expert
+age.                                                                                   𝑒𝑖,𝑗(·) for token 𝑠𝑖∈R𝑑ℎand router ℎ(·):
+
+3.3.2  Per-token FFN. Previous DLRM and DHEN models tend to                                                                                                     𝑁𝑒
+mix features from many disparate semantic spaces in a single inter-
+                                                                     𝐺𝑖,𝑗= ReLU ℎ(s𝑖)  ,  v𝑖= ∑︁ 𝐺𝑖,𝑗𝑒𝑖,𝑗(s𝑖),         (10)action module, which may causes high-frequency fields dominate
+                                                                                                                    𝑗=1
+drowning out lower-frequency or long-tail signals and ultimately
+hurting overall recommendation quality. We introduce a parameter-
+                                                           where 𝑁𝑒is the number of experts per token, 𝑁𝑡is the number of to-
+isolated feed-forward network architecture, termed per-token FFN.                                                                       kens. ReLU Routing will activate more experts for high-information
+In traditional designs, the parameters of FFN are shared across                                                                tokens and improve the parameter efficiency. Sparsity is steered
+all tokens, but our approach processes each token with dedicated
+                                                          by Lreg with an coefficient 𝜆that keeps the average active-expert
+transformations, thus isolating the parameters for each token. For                                                                             ratio near the budget:
+the 𝑡-th token s𝑡, the per-token FFN can be expressed as
+
+                                                                                                                𝑁𝑡 𝑁𝑒
+             v𝑡= 𝑓𝑡,2pffn Gelu  𝑓𝑡,1pffn (s𝑡)     ,                  (6)                                              L = Ltask + 𝜆Lreg,   Lreg = ∑︁ ∑︁ 𝐺𝑖,𝑗.         (11)
+where                                                                                                                  𝑖=1 𝑗=1
+                           𝑓𝑡,𝑖                       pffn(x) = xW𝑡,𝑖pffn + b𝑡,𝑖pffn                     (7)                                                                       Dense-training / Sparse-inference (DTSI-MoE). Inspired by [21],
+is the 𝑖-th layer MLP of the per-token FFN, W𝑡,1pffn ∈R𝐷×𝑘𝐷, b𝑡,1pffn ∈     two routers ℎtrain and ℎinfer are adopted, and Lreg is applied only
+                                                                       to ℎinfer. Both ℎtrain and ℎinfer are updated during training, while
+R𝑘𝐷, W𝑡,2pffn ∈R𝑘𝐷×𝐷, b𝑡,2pffn ∈R𝐷, 𝑘is a hyperparameter to adjust      only ℎinfer is used in inference. It turns out that DS-MoE makes
+the hidden dimension of the per-token FFN, Gelu(·) is the Gelu      experts do not suffer from under-training while reducing inference
+activation function, s𝑡∈R𝐷is the 𝑡-th token.                             cost.
+  We summarize the Per-token FFN module as
+
+                 v1, v2, ..., v𝑇= PFFN (s1, s2, ..., s𝑇) ,               (8)     3.5  Scaling Up Directions
+where                                                       RankMixer is intrinsically a highly parallel and extensible architec-
+                                                                               ture. Its parameter count and computational cost can be expanded
+    PFFN (s1, s2, ..., s𝑇) = 𝑓𝑡,2pffn Gelu  𝑓𝑡,1pffn (s1, s2, ..., s𝑇)     .    (9)      along four orthogonal axes: Token count𝑇, Model width 𝐷, Layers 𝐿
+                                                            and Expert Numbers 𝐸. For full-dense-activated version, parameterCompared to the parameter-all-shared FFN, per-token FFN en-
+                                                           and forward FLOPs for one sample can be computed ashances the modeling ability by introducing more parameters while
+keeping the computational complexity unchanged.
+    It is worth emphasizing that a Per-token FFN differs from MMoE            #Param ≈2𝑘𝐿𝑇𝐷2,    FLOPs ≈4𝑘𝐿𝑇𝐷2,     (12)
+experts in that each Per-token FFN sees a distinct token input,
+whereas all experts in a MMoE share the same input. Unlike a     The 𝑘is the scale ratio adjusting the hidden dimension of FFN. In
+MMoE, where many experts process the same input, and unlike      the Sparse-MoE version, the effective parameters and compute per
+a Transformer, where different input share one FFN, RankMixer      token are further scaled by the sparsity ratio 𝑠= #Activated_Param#Total_Param    .
+===== PAGE 5 =====
+RankMixer: Scaling Up Ranking Models in Industrial Recommenders                                          Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+4  Experiments                                         Table 1: Performance & efficiency comparison of ∼100 M-
+                                                         parameter recommendation models (best values in bold).
+4.1  Experiment Settings
+4.1.1  Datasets and Environment. The offline experiments were con-
+                                                                               Model                  Finish            Skip              Efficiencyducted using the training data from the Douyin recommendation
+                                                                                 AUC↑  UAUC↑  AUC↑  UAUC↑  Params  FLOPs/Batch
+system. These data are derived from Douyin’s online logs and user
+                                                                   DLRM-MLP (base)    0.8554    0.8270    0.8124    0.7294     8.7 M       52 G
+feedback labels. The training dataset includes over 300 features,
+                                                                       DLRM-MLP-100M    +0.15%   —     +0.15%   —      95 M       185 G
+such as numerical features, ID features, cross features, and sequen-       DCNv2             +0.13%   +0.13%   +0.15%   +0.26%    22 M       170 G
+tial features, involving billions of user IDs and hundreds of millions       RDCN              +0.09%   +0.12%   +0.10%   +0.22%   22.6 M      172 G
+of video IDs, which are all converted into embeddings. The data       MoE                +0.09%   +0.12%   +0.08%   +0.21%   47.6 M      158 G
+covers trillions of records per day, and experiments were conducted          AutoInt             +0.10%   +0.14%   +0.12%   +0.23%   19.2 M      307 G
+                                                             DHEN              +0.18%   +0.26%   +0.36%   +0.52%    22 M       158 G
+on data collected over a two-week period.                                   HiFormer           +0.48%   —     —     —     116 M      326 G
+                                                                      Wukong            +0.29%   +0.29%   +0.49%   +0.65%   122 M      442 G
+4.1.2  Evaluation Metrics. To evaluate model performance, we use
+                                                                        RankMixer-100M  +0.64%  +0.72%  +0.86%  +1.33%   107 M      233 G
+AUC (Area Under the Curve) and UAUC (User-level AUC) as the pri-
+                                                                         RankMixer-1B     +0.95%  +1.22%  +1.25%  +1.82%    1.1 B       2.1T
+mary performance metrics and Parameter count, FLOPs and MFU as
+the efficiency metrics listed as follows: Finish/Skip AUC/UAUC:
+A finish=1/0 or skip=1/0 label indicates whether a user completed
+watching a video or slide to the next video in a short-time. We
+evaluate the AUC and UAUC for this finish label. an AUC increase
+of 0.0001 can be regarded as a confidently significant improvement.
+Dense-Param: The number of parameters in the dense part, ex-
+cluding the sparse embedding parameters. Training Flops/Batch:
+The number of floating-point operations (FLOPs) required to run a
+single batch of 512 through the model, representing the computa-
+tional cost of training. MFU: MFU(Model FLOPs Utilization) is a
+metric that measures how effectively a model utilizes floating-point
+operations provided by the hardware, calculated by dividing the
+model’s actual FLOPs consumption by the hardware’s theoretical
+FLOPs capacity.                                               Figure  2:  Scaling laws between  finish Auc-gain and
+                                                         Params/Flops of different models. The x-axis uses a loga-
+4.1.3   Baselines. We compare against the following widely recog-
+                                                             rithmic scale.
+nized SOTA baselines: DLRM-MLP:which is the vanilla MLP for
+feature crossing as the experiment baseline, DCNv2[33],RDCN[3]
+the Sota of feature cross model. MoE scales up by using mutli-
+ply parallel experts. AutoInt[28], Hiformer[10] combines hetero-      We take a closer look at each model. First, simply scaling DLRM
+geneous self-attention layer and low-rank approximation matrix     up to 100 million parameters yields only limited gains, underscoring
+computation. DHEN[39]: which combines different kind of feature-      the necessity of designing models tailored to recommendation data
+cross block and stacks multiple layers (DCN/self-attention/FM/LR)       characteristics for better scaling performance. We then compare
+Wukong[38] investigates the scaling law of feature interaction fol-      the RankMixer model with other classic cross-structure designs
+lowing the arch of DHEN with Factorization Machine Block (FMB)      such as DCN, RDCN, AutoInt, and DHEN, and find they suffer from
+and Linear Compress Block (LCB).                               an imbalance between model parameters and computational cost.
+   All experiments were conducted on hundreds of GPUs in a hy-     Even with relatively small parameter sizes, these models already
+brid distributed training framework that the sparse part is updated       exhibit large FLOPs, indicating design shortcomings that constrain
+asynchronously, while the dense part is updated synchronously.       their results in the table. Meanwhile, although RankMixer achieves
+The optimizer hyperparameters were kept consistent across all      the best performance, its FLOPs remain relatively moderate among
+models. For the dense part, we used the RMSProp optimizer with        all the models when scaled to 100 million parameters, reflecting a
+a learning rate of 0.01, while the sparse part used the Adagrad      balanced approach to model capacity and computational load.
+optimizer.                                         We also compare RankMixer with several commonly used state-
+                                                                             of-the-art scaling-up models—like Hiformer and wukong—and find
+4.2  Comparison with SOTA methods                     that under similar parameter settings, RankMixer not only performs
+                                                                          better but also has lower computational requirements.To explore how to scale up the model, we compare models with
+similar parameter sizes around 100 million to determine which
+model structure performs best with the same computational cost.      4.3  Scaling Laws of different models
+  The main results of the performance of our method and baselines      In the Figure 2, we show the scaling law curves observed from both
+are summarized in Table 1. We can observe RankMixer significantly      parameter size and Flops. The RankMixer model shows the steepest
+outperforms other SOTA models across multiple objectives and       scaling law both interms of parameters, and FLOPs. RankMixer is
+metrics.                                                                consistently superior to the other models.
+===== PAGE 6 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                       Zhifang Fan et al.
+
+
+  Although the wukong model exhibits a relatively steep parameter
+curve, its computational cost increases even more rapidly; as a result,
+the gap between it and both RankMixer and hiformer is even larger
+on the AUC vs FLOPs curve. Moreover, hiformer’s performance
+is slightly inferior to RankMixer’s, reflecting that its reliance on
+token segmentation at a feature level and on Attention affects its
+efficiency. The scaling of DHEN is not ideal, reflecting the limited
+scalability of its cross structure. Moreover, MoE’s strategy of scaling
+by adding experts brings about challenges in maintaining expert
+balance, which results in suboptimal scaling performance.
+  To be Sepcific, We can scale up RankMixer model by increasing
+width (𝐷), feature token (𝑇) and Layer(𝐿). In our experiments we
+observed a conclusion shared with LLM scaling laws: model qual-     Figure 3: AUC performance of RankMixer variants under
+ity correlates primarily with the total number of parameters, and      decreasingly sparse activation ratio (1,1/2,1/4,1/8 of experts):
+different scaling directions (depth L, width D, tokens T) yield al-     dense-training + ReLU-routed SMoE preserves almost all
+most identical performance. From a compute-efficiency standpoint,     accuracy of the 1 B dense model.
+while larger hidden-dim generate larger matrix-multiply shapes
+and thus achieve higher MFU than stacking more layers. So the
+final configuration for 100M and 1B are set as (𝐷=768, 𝑇=16, 𝐿=2)
+and (𝐷=1536, 𝑇=32, 𝐿=2) respectively.
+
+4.4  Ablation Study
+
+                                                                                                                                                                                                                                                                          layer 1
+
+   Table 2: Ablation on components of RankMixer-100M
+
+
+               Setting                ΔAUC
+             w/o skip connections         −0.07%                                                                                                                                        layer 2
+             w/o multi-head token mixing   −0.50%
+             w/o layer normalization       −0.05%
+                                                            Figure 4: activated expert ratio for different token in
+                Per-token FFN →shared FFN   −0.31%
+                                                       RankMixer.
+
+
+                                                                      vector is shared and fed to each per-token FFN similar as MoE. The
+    Table 3: Token2FFN Routing–strategy comparison
+                                                             performane declines siginifantly which show the importance of
+                                                                      feature subspace split and independent modeling contrast to all-
+        Routing strategy  ΔAUC   ΔParams  ΔFLOPs               shared input. Self-Attention: Applies self-attention between tokens
+         All-Concat-MLP    −0.18%     0.0%       0.0%                  for routing. Its performance is slightly inferior to the Multi-Head
+          All-Share          −0.25%     0.0%       0.0%               Token-Mixing and also suffers from high computational cost, which
+           Self-Attention      −0.03%    +16%     +71.8%              shows the difficulty of learning similarity across hundreds of differ-
+                                                                    ent feature subspaces.
+   In the RankMixer-100M model, we performed ablation studies on
+residual connections, Multi-Head Token-Mixing. From Table 2, we     4.5  Sparse-MoE Scalability and Expert Balance
+can see that removing these components significantly decreased the          Scalability. Figure 3 plots offline AUC gains versus Sparsity of
+model’s performance. Removing Multi-Head Token-Mixing loses     SMoE. Combining Dense-Training-Sparse-Inference with ReLU
+global information, as each FFN only models partial features with-      routing is essential for preserving accuracy under aggressive spar-
+out interaction. Removing residual connections and LayerNorm        sity, enabling RankMixer to scale parameter capacity (and memory
+also worsens performance, reducing training stability and making       footprint) by > 8× with nearly no loss in AUC and with substan-
+gradient explosion or vanishing issues more likely.                           tial inference-time savings (+50% improvement over throughput).
+  We further analyzed the token mixing strategies, i.e., the routing       Vanilla SMoE’s performance drops monotonically as fewer experts
+strategies from feature tokens to FFNs in the Table 3. The routing      are activated, illustrating the expert-imbalance and under-training
+strategies compared with Multi-Head Token Mixing (Multi-Head       issues we identified. Adding a load-balancing loss reduces the degra-
+Token-Mixing) include: All-Concat-MLP: Concatenates all tokens      dation relative to vanilla SMoE, yet still falls short of the DTSI +
+and processes them through a large MLP before splitting them     ReLU version because the problems mostly lies in the expert train-
+into the same number of tokens. The decrease of performance      ing instead of the router. This validates Sparse-MoE as the path to
+shows the challenges in learning large matrices and weakening       scale RankMixer from the current 1 B parameters to future 10 B-
+local information learning. All-Share: No splitting, the entire input       scale deployments without breaching the cost budgets.
+===== PAGE 7 =====
+RankMixer: Scaling Up Ranking Models in Industrial Recommenders                                          Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+Table 4: Online AB test result for Feed Recommendation Scenarios in both Douyin and Douyin lite app and the improvements
+are all statistically significant. According to long-term reverse A/B tests and continuous observations over long-term reverse
+experiments, the gains provided by RankMixer-1B have not yet converged, and the results presented here are still improving.
+
+
+                                  Douyin app                                   Douyin lite
+
+                 Active Day↑  Duration↑   Like↑    Finish↑  Comment↑  Active Day↑  Duration↑   Like↑    Finish↑  Comment↑
+  Overall          +0.2908%     +1.0836%   +2.3852%  +1.9874%  +0.7886%       +0.1968%     +0.9869%   +1.1318%  +2.0744%  +1.1338%
+  Low-active       +1.7412%     +3.6434%   +8.1641%  +4.5393%  +2.9368%       +0.5389%     +2.1831%   +4.4486%  +3.3958%  +0.9595%
+  Middle-active    +0.7081%     +1.5269%   +2.5823%  +2.5062%  +1.2266%       +0.4235%     +1.9011%   +1.7491%  +2.6568%  +0.6782%
+  High-active      +0.1445%     +0.6259%    +1.828%   +1.4939%  +0.4151%       +0.0929%     +1.1356%   +1.8212%  +1.7683%  +2.3683%
+
+
+     Table 5: Online lift of RankMixer in Advertising          As illustrated in Table 6, the two-order-of-magnitude parameter in-
+                                                                       crease is progressively counteracted by 3.6× decrease of FLOPs/Param
+                                  Advertising                                   ratio, 10 × increase of MFU and Quatization-based 2 × Hardware
+                        Metric  ΔAUC↑  ADVV↑                        FlOPs improvements.
+                               Lift      +0.73%    +3.90%                                 (1) FLOPs/Param ratio. The three row of Table 6 reports the num-
+                                                                       ber of floating-point operations (FLOPs) required per parameter.
+                                                            Thanks to the model design, RankMixer achieves a 70-fold in-  Table 6: Metrics of Online Model Deployment and Cost
+                                                                        crease in parameters with only around a 20-fold increase in
+       Metric       OnlineBase-16M  RankMixer-1B  Change         FLOPs, achieving only one-third the FLOPs/Param ratio of the
+     #Param           15.8M            1.1B      ↑70×          baseline—a 3.6,× efficiency gain. In other words, RankMixer
+      FLOPs           107G          2106G      ↑20.7×         can accommodate three times more parameters than the baseline
+ Flops/Param(G/M)          6.8                 1.9        ↓3.6×            at the same FLOPs budget.
+     MFU              4.47%          44.57%     ↑10×         (2) Model FLOPs Utilization (MFU). Also shown in Table 6, MFU
+  Hardware FLOPs         fp32             fp16      ↑2×            indicates the utilization of machine computing. By using large
+      Latency           14.5ms         14.3ms            -        GEMM shapes, good parallel topology (fusing parallel per-token
+                                                           FFNs into one kernel), reduce the memory bandwith cost and
+                                                                    overhead, RankMixer raises MFU by nearly 10 ×, shifting the
+   Expert balance and diversity. Vanilla Sparse MoE often suffers        model from an Memory-bound to a Compute-bound regime.
+from expert imbalance, which in turn leaves some experts under-      (3) Quantization Half-precision (fp16) inference will increase the
+trained and eventually leads to “dying experts” (experts that are          theoretical peak Hardware FLOPS of GPUs by 2 ×.The primary
+almost never activated) and only a few fixed experts are constantly         computations in RankMixer consist of several large matrix multi-
+activated. Figure 4 shows that combining DTSI (dense-training,          plications that are well suited for half-precision (fp16) inference
+sparse-inference) with ReLU routing effectively resolves this issue:         as mentioned before
+Dense-training guarantees that most expert receives sufficient gradi-
+ent updates, preventing expert starvation. ReLU routing makes the     4.7  Online Performance
+activation ratio dynamic across tokens—the activation proportion
+                                                         To verify the universality of RankMixer as a scaling recommenda-
+shows in the figure varies adaptively according to its information
+                                                                          tion model framework, we conducted online experiments in the two
+content, which aligns well with the diverse and highly dynamic
+                                                                     core application scenarios of personalised ranking—feed recommen-distribution of recommendation data.
+                                                                     dation and advertising, covering major use-cases of personalized
+                                                                    ranking. For each scenario we monitor the following key perfor-
+4.6  Online Serving cost                              mance indicators:
+How can we prevent inference latency from exploding with a two-
+order-of-magnitude increase in parameters? In practical systems,         • Feed–Recommendation. Active Days is he average num-
+                                                                        ber of active days per user during the experiment period,latency is inversely proportional to throughput and directly propor-
+                                                                     a substitute for DAU growth.; Duration measures cumula-tional to the cost of serving machine resources. Compared to our
+previous fully-deployed 16M-parameter model (with a structure              tive stay time on the App; Finish/Like/Comment: User’s total
+integrated with DLRM and DCN), our RankMixer model scaled            complete plays, likes, and comments.
+parameters by approximately 70× to 1B. Despite this significant         • Advertising. We report the model quality metrics (ΔAUC)
+                                                                and revenue metrics ADVV (Advertiser Value).parameter increase, the final inference latency remained stable due
+to our hardware-aligned model design and optimization strategies.                                                         The Previous baselines in these scenarios are 16M parameter
+  When greatly increasing model parameters, latency can be de-                                                         model combined with DLRM and DCN. We replaced the Dense
+composed into the following formula:                                                                      part with the RankMixer-1B model improving a 0.7% AUC. We
+                   #Param × FLOPs/Param ratio                 conduct online A/B test experiments across Feed Recommendation
+       Latency =            MFU × (Theoretical Hardware FLOPs)            and Advertising. The long-term observation of A/B test result on
+===== PAGE 8 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY                                                                                       Zhifang Fan et al.
+
+Feed Recommendation for 8 months are shown on the Table 4 1and        [11] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017.
+the result of Advertising is shown on the Table 5.                            DeepFM: a factorization-machine based neural network for CTR prediction. arXiv
+                                                                                                     preprint arXiv:1703.04247 (2017).
+  RankMixer was deployed and evaluated in the three personalised-        [12] Wei Guo, Hao Wang, Luankang Zhang, Jin Yao Chin, Zhongzhou Liu, Kai
+ranking application including the Feed Recommendation (RankMixer-         Cheng, Qiushi Pan, Yi Quan Lee, Wanqi Xue, Tingjia Shen, et al. 2024. Scal-
+1B) and Advertising (RankMixer-1B). RankMixer delivered statisti-            ing New Frontiers: Insights into Large Recommendation Models. arXiv preprint
+                                                                                                arXiv:2412.00714 (2024).
+cally significant uplifts on all business-critical metrics. We can also        [13] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep residual
+observe that the improvements on low-active users are largest on              learning for image recognition. In Proceedings of the IEEE conference on computer
+the Table 4 compared to other activeness level user groups with        [14] visionJordanandHoffmann,pattern recognition.Sebastian 770–778.Borgeaud, Arthur Mensch, Elena Buchatskaya,
+over 1.7412% Active Days improvements, which demonstrates the             Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes
+model’s strong generalization capability. These results demonstrate             Welbl, Aidan Clark, et al. 2022. Training compute-optimal large language models.
+                                                                                          arXiv preprint arXiv:2203.15556 (2022).
+that the RankMixer as a unified backbone generalises reliably to        [15] Yanhua Huang, Hangyu Wang, Yiyun Miao, Ruiwen Xu, Lei Zhang, and Weinan
+different application scenarios.                                                 Zhang. 2022. Neural statistics for click-through rate prediction. In Proceedings
+                                                                                                         of the 45th International ACM SIGIR Conference on Research and Development in
+                                                                                             Information Retrieval. 1849–1853.
+5  Conclusion                                                                   [16] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess,
+                                                                      Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020.
+In this article, we introduce our latest RankMixer model that has              Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 (2020).
+been fully deployed on Douyin Feed ranking. It combines the model        [17] Zekun Li, Zeyu Cui, Shu Wu, Xiaoyu Zhang, and Liang Wang. 2019. Fi-gnn:
+designs for heterogeneous feature interactions and the highly par-           Modeling feature interactions via graph neural networks for ctr prediction. In
+                                                                                                 Proceedings of the 28th ACM international conference on information and knowledge
+allelizable architecture for serving efficiency. Experiments have            management. 539–548.
+demonstrated its superior performance and steep scaling law. After        [18] Jianxun Lian, Xiaohuan Zhou, Fuzheng Zhang, Zhongxia Chen, Xing Xie, and
+                                                                           Guangzhong Sun. 2018. xdeepfm: Combining explicit and implicit feature in-
+its full deployment on the Douyin app, it has obtained 0.3% and 1%              teractions for recommender systems. In Proceedings of the 24th ACM SIGKDD
+increase on active days and App duartion.                                              international conference on knowledge discovery & data mining. 1754–1763.
+                                                                                            [19] Jianghao Lin, Xinyi Dai, Yunjia Xi, Weiwen Liu, Bo Chen, Hao Zhang, Yong Liu,
+                                                                         Chuhan Wu, Xiangyang Li, Chenxu Zhu, et al. 2023. How can recommender
+References                                                                    systems benefit from large language models: A survey. ACM Transactions on
+ [1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Floren-             Information Systems (2023).
+                                                                                            [20] Bin Liu, Ruiming Tang, Yingzhi Chen, Jinkai Yu, Huifeng Guo, and Yuzhou Zhang.      cia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal
+     Anadkat, et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774              2019. Feature generation by convolutional neural network for click-through rate
+                                                                                                    prediction. In The World Wide Web Conference. 1119–1129.      (2023).
+                                                                                            [21] Junwei Pan, Wei Xue, Ximei Wang, Haibin Yu, Xun Liu, Shijie Quan, Xueming Qiu, [2] Newsha Ardalani, Carole-Jean Wu, Zeliang Chen, Bhargav Bhushanam, and
+                                                                          Dapeng Liu, Lei Xiao, and Jie Jiang. 2024. Ads recommendation in a collapsed    Adnan Aziz. 2022. Understanding scaling laws for recommendation models.
+                                                                              and entangled world. In Proceedings of the 30th ACM SIGKDD Conference on     arXiv preprint arXiv:2208.08489 (2022).
+ [3] Fedor Borisyuk, Mingzhou Zhou, Qingquan Song, Siyu Zhu, Birjodh Tiwana,            Knowledge Discovery and Data Mining. 5566–5577.
+                                                                                            [22] Yanru Qu, Bohui Fang, Weinan Zhang, Ruiming Tang, Minzhe Niu, Huifeng Guo,    Ganesh Parameswaran, Siddharth Dangi, Lars Hertel, Qiang Charles Xiao, Xi-
+     aochen Hou, Yunbo Ouyang, Aman Gupta, Sheallika Singh, Dan Liu, Hailing           Yong Yu, and Xiuqiang He. 2018. Product-based neural networks for user response
+                                                                                              prediction over multi-field categorical data. ACM Transactions on Information     Cheng, Lei Le, Jonathan Hung, S. Sathiya Keerthi, Ruoyan Wang, Fengyu Zhang,
+     Mohit Kothari, Chen Zhu, Daqi Sun, Yun Dai, Xun Luan, Sirou Zhu, Zhiwei Wang,            Systems (TOIS) 37, 1 (2018), 1–35.
+                                                                                            [23] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh,     Neil Daftary, Qianqi Shen, Chengming Jiang, Haichao Wei, Maneesh Varshney,
+                                                                                       Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark,    Amol Ghoting, and Souvik Ghosh. 2024. LiRank: Industrial Large Scale Rank-
+                                                                                                           et al. 2021. Learning transferable visual models from natural language supervision.
+     ing Models at LinkedIn. In Proceedings of the 30th ACM SIGKDD Conference on
+                                                                                                In International conference on machine learning. PMLR, 8748–8763.     Knowledge Discovery and Data Mining, KDD 2024, Barcelona, Spain, August 25-29,                                                                                            [24] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec
+      2024. 4804–4815.                                                                                               Radford, Mark Chen, and Ilya Sutskever. 2021. Zero-shot text-to-image generation. [4] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen,
+                                                                                                In International conference on machine learning. Pmlr, 8821–8831.    Hui Lu, Wenlin Zhao, Lele Yu, Xionghang Xie, Shiru Ren, Xiang Sun, Yaocheng
+                                                                                            [25] Steffen Rendle, Walid Krichene, Li Zhang, and John Anderson. 2020. Neural     Tan, Peng Xu, Yuchao Zheng, and Di Wu. 2025. LONGER: Scaling Up Long
+                                                                                                     collaborative filtering vs. matrix factorization revisited. In Proceedings of the 14th     Sequence Modeling in Industrial Recommenders. arXiv:2505.04421 [cs.IR] https:
+     //arxiv.org/abs/2505.04421                                        ACM Conference on Recommender Systems. 240–248.
+                                                                                            [26] Ying Shan, T Ryan Hoens, Jian Jiao, Haijing Wang, Dong Yu, and JC Mao. 2016. [5] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra,
+                                                                          Deep crossing: Web-scale modeling without manually crafted combinatorial     Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, et al.
+                                                                                                      features. In Proceedings of the 22nd ACM SIGKDD international conference on     2016. Wide & deep learning for recommender systems. In Proceedings of the 1st
+     workshop on deep learning for recommender systems. 7–10.                               knowledge discovery and data mining. 255–262.                                                                                            [27] Kyuyong Shin, Hanock Kwak, Su Young Kim, Max Nihlén Ramström, Jisu Jeong, [6] Sharad Chitlangia, Krishna Reddy Kesari, and Rajat Agarwal. 2023.  Scaling
+                                                                             Jung-Woo Ha, and Kyung-Min Kim. 2023.  Scaling law for recommendation     generative pre-training for user ad activity sequences. (2023).
+                                                                                        models: Towards general-purpose user representations. In Proceedings of the [7] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks
+      for youtube recommendations. In Proceedings of the 10th ACM conference on          AAAI Conference on Artificial Intelligence, Vol. 37. 4596–4604.                                                                                            [28] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang,
+     recommender systems. 191–198.                                                                              and Jian Tang. 2019. Autoint: Automatic feature interaction learning via self- [8] Alexey Dosovitskiy. 2020. An image is worth 16x16 words: Transformers for
+                                                                                                      attentive neural networks. In Proceedings of the 28th ACM international conference     image recognition at scale. arXiv preprint arXiv:2010.11929 (2020).
+ [9] Yan Fang, Jingtao Zhan, Qingyao Ai, Jiaxin Mao, Weihang Su, Jia Chen, and Yiqun            on information and knowledge management. 1161–1170.
+                                                                                            [29] Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupati-
+      Liu. 2024. Scaling laws for dense retrieval. In Proceedings of the 47th International                                                                                                            raju, Shreya Pathak, Laurent Sifre, Morgane Rivière, Mihir Sanjay Kale, Juliette
+   ACM SIGIR Conference on Research and Development in Information Retrieval.                                                                                              Love, et al. 2024. Gemma: Open models based on gemini research and technology.     1339–1349.
+[10] Huan Gui, Ruoxi Wang, Ke Yin, Long Jin, Maciej Kula, Taibai Xu, Lichan Hong,            arXiv preprint arXiv:2403.08295 (2024).
+                                                                                            [30] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yas-    and Ed H Chi. 2023. Hiformer: Heterogeneous Feature Interactions Learning
+                                                                                mine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhos-
+     with Transformers for Recommender Systems. arXiv preprint arXiv:2311.05884
+                                                                                                                  ale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. arXiv      (2023).
+                                                                                                     preprint arXiv:2307.09288 (2023).
+                                                                                            [31] Hangyu Wang, Jianghao Lin, Xiangyang Li, Bo Chen, Chenxu Zhu, Ruiming Tang,
+                                                                            Weinan Zhang, and Yong Yu. 2024. FLIP: Fine-grained Alignment between ID-
+1This result was updated on July 24, 2025, since the long-term experiments indicating             based Models and Pretrained Language Models for CTR Prediction. In Proceedings
+the gains had not yet saturated.                                                                        of the 18th ACM Conference on Recommender Systems. 94–104.
+===== PAGE 9 =====
+RankMixer: Scaling Up Ranking Models in Industrial Recommenders                                          Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+
+
+[32] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & cross network        [38] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Shen Li, Yanli Zhao,
+      for ad click predictions. In Proceedings of the ADKDD’17. 1–7.                         Yuchen Hao, Yantao Yao, Ellie Dingqiao Wen, et al. [n. d.]. Wukong: Towards a
+[33] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,             Scaling Law for Large-Scale Recommendation. In Forty-first International Confer-
+    and Ed Chi. 2021. Dcn v2: Improved deep & cross network and practical lessons             ence on Machine Learning.
+      for web-scale learning to rank systems. In Proceedings of the web conference 2021.        [39] Buyun Zhang, Liang Luo, Xi Liu, Jay Li, Zeliang Chen, Weilin Zhang, Xiaohan
+     1785–1797.                                                                        Wei, Yuchen Hao, Michael Tsang, Wenjun Wang, et al. 2022. DHEN: A deep
+[34] Yunli Wang, Zixuan Yang, Zhen Zhang, Zhiqiang Wang, Jian Yang, Shiyang Wen,           and hierarchical ensemble network for large-scale click-through rate prediction.
+    Peng Jiang, and Kun Gai. 2024. Scaling Laws for Online Advertisement Retrieval.            arXiv preprint arXiv:2203.11014 (2022).
+     arXiv preprint arXiv:2411.13322 (2024).                                                 [40] Gaowei Zhang, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, and Ji-
+[35] Ziteng Wang, Jianfei Chen, and Jun Zhu. 2024. ReMoE: Fully Differentiable          Rong Wen. 2024. Scaling law of large sequential recommendation models. In
+     Mixture-of-Experts with ReLU Routing. CoRR abs/2412.14711 (2024).  doi:10.             Proceedings of the 18th ACM Conference on Recommender Systems. 444–453.
+     48550/ARXIV.2412.14711 arXiv:2412.14711                                             [41] Weinan Zhang, Jiarui Qin, Wei Guo, Ruiming Tang, and Xiuqiang He. 2021. Deep
+[36]  Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhao-             learning for click-through rate estimation. arXiv preprint arXiv:2104.10584 (2021).
+       jie Gong, Fangda Gu, Jiayuan He, et al. [n. d.]. Actions Speak Louder than Words:        [42] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui
+     Trillion-Parameter Sequential Transducers for Generative Recommendations. In             Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep Interest Network for Click-
+      Forty-first International Conference on Machine Learning.                             Through Rate Prediction. In Proceedings of the 24th ACM SIGKDD International
+[37] Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lucas Beyer. 2022. Scaling             Conference on Knowledge Discovery & Data Mining (London, United Kingdom)
+     vision transformers. In Proceedings of the IEEE/CVF conference on computer vision          (KDD ’18). Association for Computing Machinery, New York, NY, USA, 1059–1068.
+    and pattern recognition. 12104–12113.                                                     doi:10.1145/3219819.3219823

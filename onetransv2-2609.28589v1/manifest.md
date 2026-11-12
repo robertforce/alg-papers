@@ -1,0 +1,24 @@
+# OneTrans-V2 资料清单
+
+- 标题：OneTrans-V2: Unifying Retrieval, Pre-rank, and Fine-rank with One Transformer in Industrial Recommender
+- 署名：ByteDance Global E-Commerce Recommendation Foundation Team；完整作者见译稿附录 A。
+- PDF 标注 ID / 版本：2609.28589v1。
+- PDF 标注日期：2026-09-25；页边 arXiv 标注为 2026-09-23，按原文分别保留。
+- 原始来源：用户本地文件 `../../OneTransV2.2609.28589v1.pdf`。
+- 来源 URL / 最终下载 URL：不适用（本地复制）；PDF 标识对应链接 https://arxiv.org/abs/2609.28589 ，未独立联网核验。
+- 本地归档时间（UTC）：2026-11-09T11:22:45.649136+00:00。
+- SHA-256：`166a1ec87e118921fd9fa2130f7648097df65e9ebcfe096097ea29c0df50f951`。
+- 页数：29；正文第 1–26 页，参考文献第 27–29 页，附录 A 位于第 29 页；无其他附录或独立补充材料。
+- 原文：`source/paper.pdf`；文本抽取：`source/paper.extracted.txt`。
+- 下载状态：downloaded。
+- 翻译状态：translation_complete；覆盖正文第 1–26 页、附录 A、13 图、8 表、公式（1）–（11）、57 条书目索引；完整原始书目另存 `source/references.txt`。
+- 精读状态：evidence_verified（对照本地原文核实论文报告，非独立复现）。
+- 目标文档状态：in_review；文件 `article/draft.md`，等待人工审核。
+- 知乎发布状态：not_prepared。
+- 资产：13 张图、8 张表已渲染裁剪；29 页完整页面渲染保存在 `source/assets/page-*.png`，供核对裁剪与公式。
+- 许可：未核验再发布许可，本地译稿与解读供阅读和人工审核，不自动发布。
+- 阅读入口：`README.md`。
+- 完整译稿：`translation/paper.zh-CN.md`。
+- 精读记录与证据索引：`reading-record.md`。
+- 自动质量检查：`article/review.md`，建议 send_to_human；human_review_required: true。
+- 验证结果：原文副本哈希一致；译稿公式 11、图 13、表 8、书目 57 条；表 2 全部 7 行数值核对通过；Markdown 本地引用存在；文章 4 图与原提取图一致。

@@ -1,0 +1,140 @@
+OneTrans: Unified Feature Interaction and Sequence Modeling with One Transformer in Industrial Recommender
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+References
+[1] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen,
+Hui Lu, Wenlin Zhao, Lele Yu, et al. 2025. LONGER: Scaling Up Long Sequence
+Modeling in Industrial Recommenders. arXiv preprint arXiv:2505.04421 (2025).
+[2] Jianxin Chang, Chenbin Zhang, Yiqun Hui, Dewei Leng, Yanan Niu, Yang Song,
+and Kun Gai. 2023. Pepnet: Parameter and embedding personalized network for
+infusing with personalized prior information. In Proceedings of the 29th ACM
+SIGKDD Conference on Knowledge Discovery and Data Mining. 3795–3804.
+[3] Yin-Wen Chang, Cho-Jui Hsieh, Kai-Wei Chang, Chih-Jen Lin, et al. 2010. Training
+and testing low-degree polynomial data mappings via linear svm. Journal of
+Machine Learning Research 11, 4 (2010).
+[4] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019.
+Be-
+havior Sequence Transformer for E-commerce Recommendation in Alibaba.
+arXiv:1905.06874 [cs.IR] https://arxiv.org/abs/1905.06874
+[5] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra,
+Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, Rohan
+Anil, Zakaria Haque, Lichan Hong, Vihan Jain, Xiaobing Liu, and Hemal Shah.
+2016. Wide & Deep Learning for Recommender Systems. arXiv:1606.07792 [cs.LG]
+https://arxiv.org/abs/1606.07792
+[6] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks
+for youtube recommendations. In Proceedings of the 10th ACM conference on
+recommender systems. 191–198.
+[7] Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Ré. 2022. Flashat-
+tention: Fast and memory-efficient exact attention with io-awareness. Advances
+in neural information processing systems 35 (2022), 16344–16359.
+[8] Tri Dao, Aleksander Thomas, Anima Anandkumar, Matei Zaharia, and Christo-
+pher Re. 2023. FlashAttention-2: Faster Attention with Better Parallelism and
+Work Partitioning. arXiv preprint arXiv:2307.08691 (2023).
+[9] Yufei Feng, Fuyu Lv, Weichen Shen, Menghan Wang, Fei Sun, Yu Zhu, and Keping
+Yang. 2019. Deep Session Interest Network for Click-Through Rate Prediction.
+arXiv:1905.06482 [cs.IR] https://arxiv.org/abs/1905.06482
+[10] Audrunas Gruslys, Remi Munos, Ivo Daniel, Oriol Vinyals, and Koray
+Kavukcuoglu. 2016. Memory-Efficient Backpropagation through Time. In Ad-
+vances in Neural Information Processing Systems (NeurIPS).
+[11] Huan Gui, Ruoxi Wang, Ke Yin, Long Jin, Maciej Kula, Taibai Xu, Lichan Hong,
+and Ed H. Chi. 2023. Hiformer: Heterogeneous Feature Interactions Learning
+with Transformers for Recommender Systems. arXiv:2311.05884 [cs.IR] https:
+//arxiv.org/abs/2311.05884
+[12] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, Xiuqiang He, and Zhenhua
+Dong. 2018. DeepFM: An End-to-End Wide & Deep Learning Framework for
+CTR Prediction. arXiv:1804.04950 [cs.IR] https://arxiv.org/abs/1804.04950
+[13] Junjie Huang, Jizheng Chen, Jianghao Lin, Jiarui Qin, Ziming Feng, Weinan
+Zhang, and Yong Yu. 2024. A comprehensive survey on retrieval methods in
+recommender systems. arXiv preprint arXiv:2407.21022 (2024).
+[14] Wang-Cheng Kang and Julian McAuley. 2018. Self-Attentive Sequential Recom-
+mendation. arXiv:1808.09781 [cs.IR] https://arxiv.org/abs/1808.09781
+[15] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess,
+Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020.
+Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 (2020).
+[16] Shichen Liu, Fei Xiao, Wenwu Ou, and Luo Si. 2017. Cascade ranking for opera-
+tional e-commerce search. In Proceedings of the 23rd ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining. 1557–1565.
+[17] Paulius Micikevicius, Sharan Narang, Jonah Alben, Gregory Diamos, Erich
+Elsen, David Garcia, Boris Ginsburg, Michael Houston, Oleksii Kuchaiev, Ganesh
+Venkatesh, et al. 2017. Mixed precision training. arXiv preprint arXiv:1710.03740
+(2017).
+[18] Paulius Micikevicius, Sharan Narang, Jonah Alben, Greg Diamos, Erich Elsen,
+David Garcia, Boris Ginsburg, Michael Houston, Oleksii Kuchaiev, Ganesh
+Venkatesh, and Hao Wu. 2018. Mixed Precision Training. In International Confer-
+ence on Learning Representations (ICLR).
+[19] Maxim Naumov, Dheevatsa Mudigere, Hao-Jun Michael Shi, Jianyu Huang,
+Narayanan Sundaraman, Jongsoo Park, Xiaodong Wang, Udit Gupta, Carole-
+Jean Wu, Alisson G Azzolini, et al. 2019. Deep learning recommendation model
+for personalization and recommendation systems. arXiv preprint arXiv:1906.00091
+(2019).
+[20] Nikil Pancha, Andrew Zhai, Jure Leskovec, and Charles Rosenberg. 2022. Pinner-
+former: Sequence modeling for user representation at pinterest. In Proceedings
+of the 28th ACM SIGKDD conference on knowledge discovery and data mining.
+3702–3712.
+[21] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang
+Zhu, and Kun Gai. 2020. Search-based user interest modeling with lifelong
+sequential behavior data for click-through rate prediction. In Proceedings of the
+29th ACM International Conference on Information & Knowledge Management.
+2685–2692.
+[22] Jiarui Qin, Jiachen Zhu, Bo Chen, Zhirong Liu, Weiwen Liu, Ruiming Tang, Rui
+Zhang, Yong Yu, and Weinan Zhang. 2022. Rankflow: Joint optimization of multi-
+stage cascade ranking systems as flows. In Proceedings of the 45th International
+ACM SIGIR Conference on Research and Development in Information Retrieval.
+814–824.
+[23] Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper,
+and Bryan Catanzaro. 2019. Megatron-lm: Training multi-billion parameter
+language models using model parallelism. arXiv preprint arXiv:1909.08053 (2019).
+[24] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang,
+and Jian Tang. 2019. AutoInt: Automatic Feature Interaction Learning via Self-
+Attentive Neural Networks. In Proceedings of the 28th ACM International Confer-
+ence on Information and Knowledge Management (CIKM ’19). ACM, 1161–1170.
+doi:10.1145/3357384.3357925
+[25] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang.
+2019. BERT4Rec: Sequential Recommendation with Bidirectional Encoder Rep-
+resentations from Transformer. arXiv:1904.06690 [cs.IR] https://arxiv.org/abs/
+1904.06690
+[26] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & Cross Network
+for Ad Click Predictions. arXiv:1708.05123 [cs.LG] https://arxiv.org/abs/1708.
+05123
+[27] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,
+and Ed Chi. 2021. DCN V2: Improved Deep & Cross Network and Practical
+Lessons for Web-scale Learning to Rank Systems. In Proceedings of the Web
+Conference 2021 (WWW ’21). ACM, 1785–1797. doi:10.1145/3442381.3450078
+[28] Xue Xia, Pong Eksombatchai, Nikil Pancha, Dhruvil Deven Badani, Po-Wei Wang,
+Neng Gu, Saurabh Vishwas Joshi, Nazanin Farahpour, Zhiyuan Zhang, and An-
+drew Zhai. 2023. Transact: Transformer-based realtime user action model for
+recommendation at pinterest. In Proceedings of the 29th ACM SIGKDD Conference
+on Knowledge Discovery and Data Mining. 5249–5259.
+[29] Ruibin Xiong, Yunchang Yang, Di He, Kai Zheng, Shuxin Zheng, Chen Xing,
+Huishuai Zhang, Yanyan Lan, Liwei Wang, and Tieyan Liu. 2020. On layer
+normalization in the transformer architecture. In International conference on
+machine learning. PMLR, 10524–10533.
+[30] Zhichen Zeng, Xiaolong Liu, Mengyue Hang, Xiaoyi Liu, Qinghai Zhou, Chaofei
+Yang, Yiqun Liu, Yichen Ruan, Laming Chen, Yuxin Chen, et al. 2024. Interformer:
+Towards effective heterogeneous interaction learning for click-through rate
+prediction. arXiv preprint arXiv:2411.09852 (2024).
+[31] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhao-
+jie Gong, Fangda Gu, Michael He, et al. 2024. Actions speak louder than words:
+Trillion-parameter sequential transducers for generative recommendations. arXiv
+preprint arXiv:2402.17152 (2024).
+[32] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Daifeng Guo, Yanli Zhao,
+Shen Li, Yuchen Hao, Yantao Yao, et al. 2024. Wukong: Towards a scaling law for
+large-scale recommendation. arXiv preprint arXiv:2403.02545 (2024).
+[33] Biao Zhang and Rico Sennrich. 2019. Root mean square layer normalization.
+Advances in neural information processing systems 32 (2019).
+[34] Guorui Zhou, Na Mou, Ying Fan, Qi Pi, Weijie Bian, Chang Zhou, Xiaoqiang Zhu,
+and Kun Gai. 2018. Deep Interest Evolution Network for Click-Through Rate
+Prediction. arXiv:1809.03672 [stat.ML] https://arxiv.org/abs/1809.03672
+[35] Guorui Zhou, Chengru Song, Xiaoqiang Zhu, Ying Fan, Han Zhu, Xiao Ma,
+Yanghui Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep Interest Network for
+Click-Through Rate Prediction. arXiv:1706.06978 [stat.ML] https://arxiv.org/abs/
+1706.06978
+[36] Han Zhu, Xiang Li, Pengye Zhang, Guozheng Li, Jie He, Han Li, and Kun Gai.
+2018. Learning tree-based deep model for recommender systems. In Proceedings
+of the 24th ACM SIGKDD international conference on knowledge discovery & data
+mining. 1079–1088.
+[37] Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han,
+Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen Gong, Huizhi Yang, Zheng Chai,
+Zhe Chen, Yuchao Zheng, Qiwei Chen, Feng Zhang, Xun Zhou, Peng Xu, Xiao
+Yang, Di Wu, and Zuotao Liu. 2025. RankMixer: Scaling Up Ranking Models in
+Industrial Recommenders. arXiv:2507.15551 [cs.IR] https://arxiv.org/abs/2507.
+15551

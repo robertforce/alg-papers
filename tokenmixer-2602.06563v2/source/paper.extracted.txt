@@ -1,0 +1,765 @@
+
+
+===== PAGE 1 =====
+         TokenMixer-Large: Scaling Up Large Ranking Models in
+                         Industrial Recommenders
+          Yuchen Jiang∗1, Jie Zhu∗1, Xintian Han∗1, Hui Lu∗1, Kunmin Bai∗1, Mingyu Yang∗2, Shikang Wu∗2
+          Ruihao Zhang∗1, Wenlin Zhao∗2, Shipeng Bai1, Sijin Zhou2, Huizhi Yang2, Tianyi Liu1, Wenda Liu1
+           Ziyan Gong1, Haoran Ding1, Zheng Chai1, Deping Xie1, Zhe Chen†1, Yuchao Zheng†1, Peng Xu1
+                                                ByteDance AML1, ByteDance2
+             {jiangyuchen.jyc, zhujie.zj, hanxintian, luhui.xx, baikunmin.by, yangmingyu, wushikang, zhangruihao.711, zhaowenlin,
+                  baishipeng, zhousijin, yanghuizhi, liutianyi.2024, liuwenda, gongziyan, dinghaoran, chaizheng.cz, deping.xie,
+                                          chenzhe.john, zhengyuchao.yc, xupeng}@bytedance.com
+
+        Abstract                                    ACM Reference Format:
+                                                                             Yuchen Jiang∗1, Jie Zhu∗1, Xintian Han∗1, Hui Lu∗1, Kunmin Bai∗1, Mingyu          While scaling laws for recommendation models have gained signifi-
+                                                                                         Yang∗2, Shikang Wu∗2, Ruihao Zhang∗1, Wenlin Zhao∗2, Shipeng Bai1, Si-
+           cant traction, existing architectures such as Wukong, HiFormer, and2026                                                                                               jin Zhou2, Huizhi Yang2, Tianyi Liu1, Wenda Liu1, Ziyan Gong1, Haoran
+       DHEN often struggle with sub-optimal designs and hardware under-                                                                                      Ding1, Zheng Chai1, Deping Xie1, Zhe Chen†1, Yuchao Zheng†1, Peng
+             utilization, limiting their practical scalability. Our previous Token-      Xu1. 2026. TokenMixer-Large: Scaling Up Large Ranking Models in In-
+          Mixer architecture (introduced in the RankMixer paper) balanced        dustrial Recommenders. In . ACM, New York, NY, USA, 12 pages. https:Feb     effectiveness and efficiency by replacing self-attention with a light-      //doi.org/10.1145/nnnnnnn.nnnnnnn
+10    weighttleneckstokenin deepermixingconfigurations,operator; however,includingit encounteredsub-optimalcriticalresidualbot-    1  Introduction
+            paths, vanishing gradients, incomplete MoE sparsification, and con-     Recommendation systems (RS) play a pivotal role in today’s internet
+            strained scalability. In this paper, we propose TokenMixer-Large,      ecosystem, powering critical applications such as e-commerce [5,
+          a systematically evolved architecture designed for extreme-scale       39], online advertising [15, 18], content feeds [4, 40], and live
+          recommendation. By introducing a mixing-and-reverting operation,      streaming[3]. Consequently, both industry and academia are en-
+            inter-layer residuals, and an auxiliary loss, we ensure stable gradient     gaged in continuous iteration and upgrades of recommendation[cs.IR]    propagation as model depth increases. Furthermore, we incorporate     models and architectures. With the widespread adoption of deep
+          a Sparse Per-token MoE to enable efficient parameter expansion.      learning, Deep Learning Recommendation Models (DLRMs) have
+          TokenMixer-Large successfully scales to 7 billion parameters for      demonstrated remarkable effectiveness. These models typically first
+           online traffic and 15 billion in offline experiments. Currently de-      transform high-dimensional sparse user, item, and behavioral fea-
+          ployed in multiple scenarios at ByteDance, TokenMixer-Large has      tures into low-dimensional dense embeddings via an embedding
+           achieved substantial performance gains: delivering a 1.66% increase       layer. Subsequently, sophisticated feature interaction layers are
+            in orders and a 2.98% boost in per-capita preview payment GMV for      designed to capture potential user-item relationships.
+          e-commerce; improving ADSS by 2.0% in advertising; and achieving         Inspired by the success of Large Language Models (LLMs) [1,
+           1.4% revenue growth in live streaming.                                   19, 28], research in feature interaction has begun exploring the
+                                                                                   scaling laws of DLRMs: investigating whether continuous perfor-
+      CCS Concepts                                         mance gains can be achieved by increasing model parameters and
+                                                                         FLOPs. Early efforts focused primarily on merely expanding model
+              • Information systems →Recommender systems.
+                                                                         width or interaction layer parameters, lacking thoughtful architec-
+                                                                                       tural design, which limited their effectiveness. Subsequent works
+       Keywords                                                               like Wukong [36], HiFormer [12], and DHEN [37] attempted to
+           Scaling Laws, Ranking Model, Recommender System                  design more refined model structures and scale them (in size, widtharXiv:2602.06563v2                                                              and depth), but often overlooked hardware-aligned co-design and
+                                                                                  optimization, leading to suboptimal performance.
+                 * Equal Contributions.                                                        Currently, the leading SOTA model structure in industry is To-
+            † Corresponding authors.                                          kenMixer—a highly simplified variant of the Transformer. It signif-
+                                                                                    icantly reduces computational complexity by replacing attention
+                                                                        with a lightweight token mixing operation. RankMixer [40] em-
+             Permission to make digital or hard copies of all or part of this work for personal or      ployed it as a backbone network and verified the effectiveness of              classroom use is granted without fee provided that copies are not made or distributed
+                for profit or commercial advantage and that copies bear this notice and the full citation      the structure in the ranking model. Through hardware-aware co-
+            on the first page. Copyrights for components of this work owned by others than the      design, it substantially improves Model FLOPs Utilization (MFU)
+               author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+                republish, to post on servers or to redistribute to lists, requires prior specific permission      while maintaining scaling efficiency, greatly enhancing hardware
+             and/or a fee. Request permissions from permissions@acm.org.                       usage. Despite its industrial success (e.g., RankMixer), we identify
+               Conference’17, Washington, DC, USA                                            several key limitations in TokenMixer:
+         © 2026 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+         ACM ISBN 978-x-xxxx-xxxx-x/YYYY/MM                                 • Sub-optimal Residual Design: Since RankMixer transforms
+              https://doi.org/10.1145/nnnnnnn.nnnnnnn                                          original tokens into new tokens through a mixing mechanism,
+
+===== PAGE 2 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+   it requires the number of new tokens 𝑇′ matches the original     • We upgrade the relu-MoE in RankMixer(TokenMixer) to a Sparse-
+  number 𝑇to ensure the integrity and propagation of the original        Pertoken MoE version with a unified "Sparse Train, Sparse In-
+  semantic information. Furthermore, in its add & norm opera-         fer" paradigm. Coupled with efficient operator design and engi-
+   tions, RankMixer directly adds tokens before and after mixing,        neering optimizations such as FP8 and Token Parallel, Sparse-
+  which often triggers semantic misalignment, ultimately leading        Pertoken MoE significantly reduces both training and inference
+  to sub-optimal performance.                                                costs.
+• Impure Model Architecture: Due to historical iterative pro-     • We conduct a comprehensive study on the scaling laws of dif-
+  cesses, many deployed models retain numerous fragmented op-        ferent models, validating the superiority of TokenMixer-Large.
+  erators (e.g., LHUC [26], DCNv2 [31]) even after adopting Token-     We successfully scaled the model to 15B and 7B parameters in
+  Mixer as the backbone. These memory-bound operators, charac-        the offline experiments for the Douyin ads and e-commerce sce-
+  terized by low computational intensity but high memory access         narios, respectively. In the online traffic experiments, these were
+  and communication overhead, degrading the overall model MFU.        scaled to 7B and 4B parameters, respectively. TokenMixer-Large
+• Insufficient Gradient Updates in Deep Models: TokenMixer           is now deployed across multiple online scenarios at ByteDance,
+   is typically configured with a shallow depth (e.g., 2 layers in        achieving online gains of 2% ADSS and 2.98% GMV while serving
+  RankMixer) in industrial settings. As model depth increases,       hundreds of millions of users.
+  achieving training stability and performance gains becomes chal-
+  lenging. The current TokenMixer lacks designs tailored for deep    2  Related Work
+  architectures.                                                         The core of deep learning recommendation models (DLRMs) [8] lies
+• Inadequate MoE Sparsification: While RankMixer employs      in designing effective feature interaction architectures. Wide and
+  Sparse MoE [11] to optimize model cost, it relies on a "Dense                                                         Deep [6], as one of the classical works, captures both low-order and
+  Train, Sparse Infer" paradigm, failing to reduce training costs.                                                                   high-order feature interactions through a bagging-style approach.
+  Moreover, the ReLU-MoE [32] used exhibits activation dynamism,                                                                This modeling paradigm is reflected in subsequent designs such
+  making it difficult to predict the number of experts activated per                                                                       as DeepFM [13], XDeepFM [17], PNN [22], DCN [30], DCNv2 [31],
+  batch during inference. This necessitates truncation or fallback                                                            and FCN [6]. However, being early-stage designs, these models still
+  strategies for activated experts, which is not inference-friendly.                                                                            rely on inefficient, high-latency operators from the CPU era and fail
+• Limited Scaling Exploration: Due to the framework and train-      to fully leverage the computational power of GPUs. Building on the
+  ing efficiency constraints, RankMixer’s parameter scale was only                                                              bagging of different substructures, DHEN [37] and Wukong [36]
+  pushed to about 1-Billion parameters.                                                                      further validated the scaling laws in recommendation systems,
+To address these challenges, we design and thoroughly explore      demonstrating that a "unified design, stacked layers" iteration pat-
+TokenMixer-Large. The TokenMixer-Large framework comprises      tern can also achieve significant gains in recommendation tasks.
+modules like Tokenization, TokenMixer-Large Block, and Sparse-       As a foundational model, the Transformer [29] has been widely
+Pertoken MoE. A TokenMixer-Large Block contains components     proven in the GPU era to possess strong versatility (CV [10, 20],
+such as Mixing & Reverting, Pertoken-SwiGLU, Residual & Normal-    NLP [19, 28] and RS [25]) and favorable scaling-law [16, 33] proper-
+ization, and Interval Residual & Residual Loss. By stacking multiple        ties. In the recommendation domain, models such as AutoInt [25]
+TokenMixer-Large Blocks, we significantly improve offline and on-     and HiFormer [12] enhances feature interaction capabilities by
+line model performance in industrial scenarios. The contributions      incorporating attention mechanisms. RankMixer [40] and MLP-
+of this paper are summarized as follows:                          Mixer [27] further simplifies attention into a more lightweight
+• We propose TokenMixer-Large. By revisiting and redesigning      token-mixing operation, reducing the quadratic computational cost
+  the flawed residual mechanism in TokenMixer, we introduce the      associated with standard attention. Works such as LONGER [3],
+  Mixing & Reverting operation. Extensive ablation studies on key    HSTU [35], and MTGR [14] have also demonstrated, to varying de-
+  components demonstrate that TokenMixer-Large is a superior       grees, the scaling potential of Transformer-based models (and their
+  model architecture.                                                   variants) in sequential modeling and generative recommendation
+• We observe that as models scale up, the benefits provided by       scenarios.
+  low-level fragmented operators can be subsumed by stacking
+  multiple TokenMixer Blocks. Removing these operators drasti-    3  Methodology
+   cally improves model MFU and hardware utilization. We integrate
+   this "pure model" philosophy into TokenMixer-Large, elevating     3.1  Overall Architecture
+  the MFU of the advertising backbone network to 60%             As illustrated in Figure 1, The overall architecture of the TokenMixer-
+• To tackle the issue of insufficient gradient updates in deep models,     Large framework consists of three parts: 1).Tokenization, which
+  we incorporate interval residuals, an auxiliary loss mechanism       transfers raw highly sparse one-hot features to dense embeddings,
+  and down-matrix small initialization within the TokenMixer-     then to dimension-aligned semantic tokens. 2). Token Mixing &
+  Large Block, facilitating better convergence for deep models.        Channel Mixing, which follows a "Mixing and Reverting" paradigm
+                                                                         to solve the dimension mismatch problem in RankMixer(TokenMixer).
+                                                                                            3). Sparse-Pertoken MoE, which is the upgraded version of Pertoken-
+                                                            FFN/relu-MoE mentioned in RankMixer(TokenMixer). Finally, we
+                                                               use a mean pooling method to aggregate output tokens, and the
+                                                                 output representation will be used for various tasks prediction.
+
+===== PAGE 3 =====
+TokenMixer-Large                                                                                                        Conference’17, July 2017, Washington, DC, USA
+
+
+
+
+
+Figure 1: The architecture of the TokenMixer-Large. Raw tokens include all original features as well as features from sequence
+aggregation and extraction (such as din [39]/ longer [3]). The entire Tokenmixer-Large model consists of multiple Tokenmixer-
+Large Blocks, and the backbone of each block consists of (Norm, Mixing, S-P MoE, Reverting, Norm, S-P MoE) and residuals.
+
+3.2  Tokenization                                                      3.3.1  Mixing & Reverting. A RankMixer (TokenMixer) block can
+3.2.1  Semantic Group-wise Tokenizer. Industrial recommendation      be formulated as follows.
+systems usually include user features, item features, sequence fea-
+tures (e.g., user behavior history covering short-term (DIN [39]),                   [. . . , [x(0)𝑡    , . . . , x(𝐻)𝑡    ], . . . ] = split(X) ∈R𝑇×𝐻×(𝐷/𝐻)      (5)
+long-term (SIM [21]), ultra long-term (LONGER [3]) interests) and
+                                              Hℎ= concat[x(ℎ)1    , . . . , x(ℎ)𝑇] ∈R𝑇×𝐷/𝐻                     (6)cross features. The first step involves projecting all these features
+from a high-dimensional sparse space into a low-dimensional dense        H = concat[H1, . . . , Hℎ] ∈R𝐻×(𝑇·𝐷/𝐻)                     (7)
+space via an embedding layer, where Feature 𝐹𝑖will be embedded                                                                                Hnext = Norm(pSwiGLU(H) + H) ∈R𝐻×(𝑇∗𝐷/𝐻)         (8)to embedding 𝑒𝑖with varying dimension 𝑑𝑖
+                                                          As shown, the number of tokens in the original input is 𝑇, while
+             𝑒𝑖= Embedding(𝐹𝑖, 𝑑𝑖) ∈R𝑑𝑖                   (1)                                                                   the number of tokens after mixing in the i-th layer is H. Unless
+Given that TokenMixer-Large is a highly parallel architecture de-     each layer’s 𝐻remains the same and 𝑇is equal to 𝐻, residual con-
+sign, it is necessary to transform variable-length embedding rep-      nections cannot propagate smoothly across layers. To overcome
+resentations into dimension-aligned feature tokens to facilitate       this limitation, we design TokenMixer-Large, featuring a special
+subsequent computations. To achieve this, we group embeddings      two-layer TokenMixer structure: the first layer is responsible for
+of different dimensions according to their semantic meanings and     mixing information among the original tokens, and the second
+concatenate the embeddings within each group {𝐺1,  ..., 𝐺𝑇−1}      layer specifically restores the dimension of the mixed tokens. This
+before performing compression and alignment. Considering that      symmetric "mixing–reverting" design ensures dimensional consis-
+different semantic groups represent distinct feature characteristics,      tency of the input and output across modules, thereby establishing
+we employ different DNN mappings during the compression and      a continuous signal pathway from the initial input to the deep
+alignment process to preserve their heterogeneity.                    network. It enables stable residual connections at every layer and
+                                                                              effectively prevents the loss of gradient information. Detailed com-       X𝑖= MLP𝑖(concat[𝑒𝑙,  ..., 𝑒𝑚]), 𝑒𝑙, ...,𝑒𝑚∈𝐺𝑖         (2)
+                                                                     parisons with RankMixer(TokenMixer) can be found in section 4.3
+3.2.2  Global Token. Beyond semantically grouped tokens, we also
+introduce a global token specifically designed to encapsulate             [..., [x(1)𝑡    , x(2)𝑡    , . . . , x(𝐻)𝑡    ], ...] = split(X) ∈R𝑇×𝐻×(𝐷/𝐻)          (9)
+global information. Drawing inspiration from the [CLS] token
+mechanism in BERT  this global token is designed to aggregate      Hh = concat[x(ℎ)1    , x(ℎ)2    , . . . , x(ℎ)𝑇] ∈R(𝑇∗𝐷/𝐻)                  (10)
+global information and propagate it to other tokens.                                          H = concat[H1, H2, . . . , HH] ∈R𝐻×(𝑇∗𝐷/𝐻)                    (11)
+           XG = MLP𝑔(concat 𝐺1,  ..., 𝐺𝑇−1 )               (3)                                                                          Hnext = Norm(pSwiGLU(H) + H) ∈R𝐻×(𝑇∗𝐷/𝐻)              (12)
+The final input of TokenMixer-Large is the combination of the                   (ℎ)    (ℎ)         (ℎ)                                                                                                                   [..., [x′ 1    , x′ 2    , . . . , x′ 𝑇], ...] = split(Hnext) ∈R𝑇×𝐻×(𝐷/𝐻)  (13)global token and enhanced tokens.
+                                                                                      Xrevertt   = concat[x′ 𝑡(1) , x′ 𝑡(2) , . . . , x′ 𝑡(𝐻) ] ∈R𝐷                  (14)
+        X = concat XG, X0,  ..., X𝑇−1 ∈R𝑇×𝐷             (4)         Xrevert = concat[Xrevert1                                                                                                                                                                                   , Xrevert2       , . . . , XrevertT    ] ∈R𝑇×𝐷           (15)
+                                                                           Xnext = Norm(pSwiGLU(Xrevert) + X) ∈R𝑇×𝐷                (16)3.3  TokenMixer-Large Block
+TokenMixer-Large employs a stacked structure of multiple TokenMixer-   3.3.2  Pertoken SwiGLU. RankMixer(TokenMixer) introduces a pa-
+Large blocks. Each block can be decomposed into three components:     rameter isolated feed-forward network architecture termed per-
+mixing module, pertoken SwiGLU, and normalization.                token FFN, designed to model the feature heterogeneity among
+
+===== PAGE 4 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+                                                         3.4  Sparse-Pertoken MoE
+                                                          To further enhance the cost-effectiveness of TokenMixer-Large, we
+                                                                 design a Sparse-pertoken MoE, which expands each expert into
+                                                                      multiple sub-experts based on the pertoken SwiGLU and activates
+                                                          them sparsely. This enables "sparse training and sparse serving"
+                                                          compared with Rankmixer’s "dense training and sparse serving",
+                                                                             significantly reducing the training and inference costs of very large-
+                                                                          scale recommendation models.
+
+                                                                                    3.4.1   First Enlarge, Then Sparse. In terms of iteration strategy, we
+                                                               adopt a "first enlarge, then sparse" approach: first scaling up the
+                                                          model to gain effectiveness, then splitting the pertoken SwiGLUs
+      Figure 2: Internal Residual and Auxiliary Loss
+                                                          and activating them sparsely to obtain efficiency benefits. The
+                                                           Sparse-Pertoken MoE (S-P MoE) can be formulated as follows:
+
+different tokens. In TokenMixer-Large, we upgrade the pertoken                          𝑘
+FFN to a pertoken SwiGLU.                                          S-P MoE(·) = ∑︁ 𝑔𝑗(·) · Expert𝑗(·), if j is chosen,
+                                                                                                        𝑗=1
+    pSwiGLU(·) = FCdown Swish FCgate (·) ⊙FCup (·)  ,     (17)                                                                         (19)
+                                                                           Expert𝑗(·) = FCdown, j Swish  FCgate, j (·) ⊙FCup, j (·)  ,
+where
+                                                                                     FCi,j(x𝑡) = Wti,jx𝑡+ bti,j, 𝑖∈{up, gate, down}           FCi(x) = W𝑡𝑖x𝑡+ b𝑡𝑖,  𝑖∈{up, gate, down}        (18)
+is the single MLP of the pertoken SwiGLU, {W𝑡up, W𝑡gate} ∈R𝐷×𝑛𝐷,       where {W𝑡up, W𝑡gate} ∈R𝐷×𝑛𝐷/𝐸, {b𝑡up, b𝑡gate} ∈R𝑛𝐷/𝐸, W𝑡down ∈
+{b𝑡up, b𝑡gate} ∈R𝑛𝐷, W𝑡down ∈R𝑛𝐷×𝐷, b𝑡down ∈R𝐷, 𝑛is a hyperpa-     R𝑛𝐷/𝐸×𝐷, b𝑡down ∈R𝐷. 𝐸is the expert number of each token. 𝑘is the
+                                                                   top-k number for the router 𝑔(·). And 𝑔(·) of the selected expertsrameter to adjust the hidden dimension of the pertoken SwiGLU,
+Swish(·) is the Swish activation function, x𝑡∈R𝐷is the 𝑡-th token.       is constrained to a sum of 1 by softmax(·), representing that the
+                                                   sum of the probabilities of activated experts is 1. Detailed design
+3.3.3  Residual & Normalization. Standard residuals are shown in      concept and experimental results can be found in Appendix A.1.
+Figure 1. In addition, we replace the standard LayerNorm with the
+more lightweight RMSNorm [38]. By removing the mean-centering       3.4.2  Shared Expert. Currently, several LLMs based on MoE ar-
+                                                                        chitectures mention the use of shared experts to improve trainingstep in LayerNorm, RMSNorm preserves core normalization capabil-
+                                                                                  stability and effectiveness, a design we have also adopted in practice.ities while significantly reducing computational overhead. However,
+                                                                    Notably, here the shared expert is still assigned per token, ratherunder the Post-Norm design in RankMixer(TokenMixer), we often
+                                                                than being a globally visible shared expert for all tokens.encounter issues of numerical explosion and gradient instability. To
+address these stability concerns, we adopt a Pre-Norm design to                       𝑘−1
+replace the original Post-Norm architecture. Detailed comparasion          S-P MoE(·) = ∑︁ 𝑔𝑖(·) · Expert𝑖(·) + SharedExpert𝑖(·)     (20)
+can be found in Appendix A.4                                                                       𝑖=1
+                                                                                   3.4.3  Gate Value Scaling. In practice, we observed that since 𝑔(·)3.3.4  Inter-Residual & Auxiliary Loss. As Figure 2 shown, in ad-
+                                                                         typically uses softmax to convert router logits into a probability
+dition to the standard residual connections, we incorporate inter-
+                                                                          distribution summing to 1, this sum-to-one constraint can lead toresidual connections (typically added at intervals of 2 or 3 layers)
+                                                                               insufficient gradient updates for the SwiGLUs. Therefore, we add ato strengthen information flow across layers. It primarily addresses
+                                                                     constant 𝛼before 𝑔(·) to allow more sufficient updates of the expertthe gradient vanishing problem. By enhancing the transmission of
+                                                                 networks:lower-layer features to higher layers, it accelerates the convergence
+                                                                                       𝑘−1
+of parameters in early layers and alleviates the gradual decay of
+                                                                  S-P MoE(·) = 𝛼· ∑︁ 𝑔𝑖(·) · Expert𝑖(·) + SharedExpert𝑖(·)   (21)gradients in deep networks. Interval-residual connections are not
+                                                                                                            𝑖=1
+recommended for the final layer. The primary role of the last layer
+is to distill highly abstract, high-level features to provide precise                                                                                    3.4.4  Down-Matrix Small Init. Inspired by Rezero [23], we reduce
+support for subsequent classification tasks. Introducing excessive                                                                     the initialization variance of the final layer W_down in SwiGLU (we
+raw lower-level information could interfere with this abstraction                                                                  use xavier_uniform and lower the standard deviation hyperparame-
+process and thereby hurt final task performance.                                                                              ter from default 1 to 0.01). This adjustment keeps the F(x) term in
+  Meanwhile, by combining the logits computed from the outputs      F(x) + x close to zero during the early training phase, effectively
+of the lower-layers with those of the higher layers for the calcu-                                                         making the module behave like an approximate identity mapping
+lation of joint loss, a lightweight auxiliary loss is formed. This        initially, thereby improving training stability. It also helps allevi-
+mechanism essentially enables the lower layers to learn to "estimate                                                                       ate the output value explosion issue caused by the multiplicative
+deviations in higher-layer features," thereby strengthening their                                                                         interaction between the up and gate matrices in SwiGLU.
+feature representation capacity. It helps prevent insufficient train-                                                            With the above modifications combined, our MoE model version
+ing of lower-layer parameters as network depth increases, leading                                                              can achieve performance nearly matching that of a fully activated
+to more thorough parameter learning and more stable performance                                                               dense model while activating only half of the parameters. We also
+across the deep model.
+
+===== PAGE 5 =====
+TokenMixer-Large                                                                                                        Conference’17, July 2017, Washington, DC, USA
+
+      Table 1: The time consumption, proportion, and bottlenecks of the main operators in TokenMixer-Large block.
+
+                                                                 Training                                 Serving
+                                 Operator
+                                             Time(ms)  Percentage       Type       Time(ms)  Percentage      Type
+                        MoEGroupedFFN    136.77      89.18%    Compute Bound      7.43       98.35%   Memory Bound
+                           MoEPermute        6.32       4.12%    Memory Bound      0.06       0.75%    Memory Bound
+                         MoEUnpermute      10.27       6.69%    Memory Bound      0.07       0.90%    Memory Bound
+
+
+                                                                       to poor hardware utilization and low throughput. A naive model-
+                                                                            parallel solution would shard the pertoken operation weights to
+                                                              each device, requiring an ’all2all’ operation both before and af-
+                                                                            ter each computation to switch sharding layouts. This results in
+                                                               a total of four communication steps per block. To address these
+                                                                    problems, we present Token Parallel, a model-parallelism strategy
+Figure 3: Workflow of high-performance operators in one                                                                               specifically designed for the TokenMixer-Large architecture. It par-
+block. Green nodes represent operators, blue nodes represent                                                                                titions the model’s parameters (specifically the pertoken operation
+data. The asterisk (*) indicates that the data is stored and                                                                   weights) and computation across multiple devices.
+computed in FP8 quantization.
+                                                                        Implementation. The implementation of Token Parallel aligns the
+                                                                     data sharding with the computation flow of the TokenMixer-Large
+                                                                          block, which consists of a "Mixing" and a "Reverting" step, followedobserve from Figure 7 that after introducing these changes, the
+                                                         by a pertoken operation. All tensors below can be viewed as dis-load is well balanced across tokens, eliminating the need for an
+                                                                       tributed tensors. We use Shard(dim) to denote a tensor shardedadditional load-balancing loss. Detailed analysis can be found in
+                                                        on a specific dimension.Appendix A.2
+
+                                                                      Listing 1: Pseudocode of Token Parallel Data Flow.
+3.5  Training/Serving Optimization                         # Input: X_prev [N*B, T, D]. Layout: Shard(Batch)
+We have developed a set of high-performance operators to enhance       # N: Number of devices.
+                                                                            # B: local bsz
+the efficiency of TokenMixer-Large in both training and inference.
+                                                                            # Mixing
+3.5.1  High Performance custom operators. The overall workflow is       X_chunk = split(X_prev, num_splits=N, axis=2) # Shape: H x [N*B, T,
+illustrated in figure 3. MoEPermute transforms the input from batch-            D/H], Shard(0)
+                                                                            X_head = concat(X_chunk, axis=0).view(H, N*B, -1) # Shape: [H, N*B,
+first to expert-first, ensuring that the input for each expert FFN is             T*D/H], Shard(1)
+contiguous. Subsequently, the MoEGroupedFFN operators (MoE-
+GroupedSwiglu and MoEGroupedGemm) compute all expert FFNs       # Exchange data. After this, we hold full 'Batch' but sharded 'Head'
+                                                                            X_hidden = all2all(X_head) # Shape: [H, N*B, T*D/H], Shard(0)
+using a single kernel, reducing operator scheduling overhead and       h_hat = pertokenOperation(X_hidden) # Shape: [H, N*B, T*D/H], Shard
+improving device utilization. Finally, MoEUnpermute calculates the             (0)
+weighted sum of the outputs from multiple activated experts as                                                                            # Reverting
+the final output. The time consumption of each operator during       chunks_t = split(h_hat, num_splits=T, axis=2).transpose(0, 1) #
+training and inference is shown in Table 1, with MoEGroupedFFN             Shape: T x [N*B, H, D/H], Shard(1)
+being the primary contributor to latency. Its proportion of inference       # Pack for transmission & merge Head dim
+time is even higher because its memory access does not decrease       payload_t = concat(chunks_t).view(T, N*B, -1) # Shape: [T, N*B, D],
+with smaller batch sizes during inference.                                      Shard(2)
+
+                                                                            # Exchange data. After this, we hold full 'Dim' but sharded 'Token'
+3.5.2  FP8 Quantization. We employ FP8 E4M3 post-training quan-      x_revert = all2all(payload_t) # Shape: [T, N*B, D], Shard(0)
+tization during inference, while maintaining bfloat16 precision       x_hat = pertokenOperation(x_revert) # Shape: [T, N*B, D], Shard(0)
+throughout training. Online experiments demonstrate that FP8 serv-
+                                                                            # 3. Final Output
+ing provides a 1.7x speedup without compromising model accuracy.      X_curr = transpose(x_hat) # Shape: [N*B, T, D], Shard(1)
+As shown in Figure 3, the input is quantized in MoEPermute, and all
+                                                            With Token Parallel, the output X𝑙remains sharded by the tokenexpert weights have been pre-quantized. Next, MoEGroupedSwiglu
+                                                             dimension (Shard(token)) and is fed directly to the next block,fuses the quantization of outputs and directly produces quantized
+                                                        whose initial ’split’ operation can work on this layout. This elimi-activations. Similarly, MoEGroupedGemm performs computations
+                                                                   nates the two extra communication steps, reducing the overheadusing FP8 and outputs results in bfloat16 format.
+                                                             from 4𝐿to 2𝐿+ 1 for 𝐿layers, as a final all_to_all is needed only
+3.5.3  Token Parallel. Scaling the TokenMixer-Large architecture       at the end to restore the batch sharding.
+in distributed multi-device environments introduces significant bot-       The Token Parallel strategy delivers substantial performance
+tlenecks. For training, the primary challenges are GPU memory      gains across both training and inference. In production serving,
+capacity and overall training time. As models grow, their parame-     a TokenMixer-Large model with 4-way token parallelism (global
+ters and activations can exceed the memory of a single device. For      batch size 320) achieves a 29.2% throughput improvement over a
+serving, the issue is even worse: online inference with small batch      non-parallelized baseline. This gain is further boosted to an im-
+sizes makes the computation memory-bandwidth-bound, leading      pressive 96.6% by overlapping communication with computation,
+
+===== PAGE 6 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+
+employing techniques like fine-grained micro-batch scheduling or         All experiments are conducted in a hybrid distributed training
+in-kernel computation-communication overlapping.                 framework composed of 64 GPUs in E-commerce (256 in Feed-Ads
+                                                            and Live-Streaming). The framework adopts asynchronous updates
+4  Experiments                                                    for sparse parameters and synchronous updates for dense parame-
+                                                                                    ters. The optimizer hyperparameters remain consistent across all
+4.1  Experiment Settings
+                                                                   models: both the dense and sparse parts use the Adagrad optimizer,
+4.1.1  Datasets and Environment. The offline experiments in this      with learning rates set to 0.01 and 0.05 respectively.
+study were mainly conducted on a real-world training dataset from
+                                                           Table 2: Performance & efficiency comparison of ∼500 M-
+the E-Commerce scenario on Douyin’s main feed. This dataset is
+                                                         parameter models on E-commerce (best values in bold).
+derived from the platform’s online logs and user feedback labels,
+which include metrics such as product clicks, conversions, and                           CTCVR           Efficiency
+                                                                        Model
+Gross Merchandise Volume (GMV). The training set comprises over                              ΔAUC↑     Params     FLOPs/Batch
+500 distinct features—including numerical, ID-based, cross, and                                                                DLRM-MLP-500M [24]            –         499 M         125.1 T
+sequential features—and covers hundreds of millions of unique
+                                                                           HiFormer [12]                    +0.44%       570 M          28.8 T
+users. After a sampling process, the dataset contains approximately
+                                                              DCNv2 [31]                      +0.49%       502 M         125.8 T
+400 million records per day, collected over a two-year period.         DHEN [37]                       +0.63%       415 M         103.4 T
+   Offline experiments also include real-world training data from         AutoInt [25]                     +0.75%       549 M         138.6 T
+Douyin Ads and Douyin Live Streaming. After sampling, the daily       Wukong [36]                     +0.76%       513 M            4.6 T
+volumes reach 300 million and 17 billion records, respectively.           Group Transformer               +0.81%       550 M            4.5 T
+                                                                   FAT [34]                         +0.82%       551 M          4.59 T
+                                                                             RankMixer(TokenMixer) [40]       +0.84%       567 M            4.6 T
+4.1.2  Evaluation Metrics. We use AUC (Area Under the Curve) and
+                                                                      TokenMixer-Large 500M        +0.94%      501 M            4.2 T
+UAUC (User-Level AUC) as the primary effectiveness metrics, and
+                                                                      TokenMixer-Large 4B          +1.14%       4.6 B         29.8 T
+dense parameter count, FLOPs, and MFU as efficiency metrics, de-                                                                      TokenMixer-Large 7B          +1.20%       7.6 B         49.0 T
+tailed as follows: AUC/UAUC: We employ AUC from CTR and CVR        TokenMixer-Large 4B SP-MoE   +1.14%   2.3 B in 4.6 B     15.1 T
+tasks as the main effectiveness indicators. Parameters: We use the
+number of pure dense parameters (excluding sparse embeddings)
+as one of the efficiency measures. Training FLOPs per Batch:     4.2  Comparison With SOTA Methods
+Refers to the number of floating-point operations required for the     The results from Table 2 demonstrate that TokenMixer-Large out-
+model to process a single batch of 2048 samples, representing the      performs all SOTA models, achieving a +1.14% AUC gain in CTCVR
+computational cost of training. MFU:Model FLOPs Utilization Mea-     compared to the MLP-500M baseline. Notably, models such as
+sures the actual utilization efficiency of the hardware’s theoretical     Wukong, Group Transformer, and RankMixer employ a pertoken
+floating-point computing capacity by the model.                    network design, which leads to significantly lower FLOPs (with a
+                                                                   batch size of 2048) than other baselines. Moreover, we find that the
+4.1.3   Baselines. We mainly compare the following widely recog-      Sparse-Pertoken MoE can match the performance of its dense coun-
+nized SOTA baseline models: DLRM-MLP [24], which employs       terpart while activating only half of the parameters, substantially
+multi-layer perceptrons (MLP) for feature interaction. DCNv2 [31],     improving the training/inference ROI of the model.
+an improved version of "Deep & Cross Network" that provides
+deeper and stronger feature-crossing capability. AutoInt [25], which     Table 3: Detailed Comparison With Rankmixer(TokenMixer)
+aims to automatically and explicitly learn high-order feature combi-
+nations through multi-head self-attention. HiFormer [12], which       Model Version        SR  OTR  TSA  AUC↑  Params   FLOPs
+modifies the standard self-attention mechanism by using heteroge-                                                                        Group Transformer    ✓   ✓   ✓     –     500M        4.5T
+neous self-attention layers and low-rank approximation. DHEN [37],       RankMixer w/o SR&OTR  ✘   ✘    ✘    -0.20%    510M        4.2T
+which adopts a bagging idea to integrate multiple types of feature        RankMixer w/o OTR    ✓   ✘    ✘    -0.13%    510M        4.2T
+interaction modules (DCN/SA/FMB) within one block and stacks        RankMixer         ✓   ✓    ✘    +0.03%   567M        4.6T
+multiple layers. Wukong [36], which bags a factorization machine         TokenMixer-Large     ✓   ✓   ✓    +0.13%   500M        4.2T
+module (FMB) and a linear compression module (LCB) into two
+modules, stacks multiple layers, and studies the scaling laws of
+feature interactions. Group Transformer: Our in-house Trans-
+                                                         4.3  Detailed Comparison Withformer variant designed for modeling heterogeneous features. It
+reduces the computational complexity of self-attention by group-        Rankmixer(TokenMixer)
+ing features and aggregating them into a small number of tokens,    We conducted a detailed comparison between TokenMixer-Large
+and employs pertoken Q/K/V/O to enhance the model’s capacity     and Rankmixer(TokenMixer). Three key design aspects are defined
+for representing heterogeneous features. FAT [34]: An upgraded      as follows:
+version of Group Transformer, it uses orthogonal basis combina-     • Standard Residual (SR): Indicates whether standard residual
+tions to improve model performance based on pertoken Q/K/V/O.        connections exist between blocks.
+RankMixer [40]: Built around a TokenMixer block that replaces     • Original Token Residual (OTR): Indicates whether the se-
+self-attention, substantially lowering computational cost.               mantic information from the original tokens is preserved and
+
+===== PAGE 7 =====
+TokenMixer-Large                                                                                                        Conference’17, July 2017, Washington, DC, USA
+
+
+
+
+
+                   (a) Feed Ads 15B                                  (b) E-Commerce 7B                                  (c) Live Streaming 4B
+
+                                      Figure 4: Scaling Laws on different scenarios
+
+  propagated to subsequent layers. For example, if an input of 40       Overall, TokenMixer-Large achieves the best performance and ex-
+  tokens is mixed into 16 new tokens and remains at a size of 16       hibits a steeper improvement slope.
+  tokens thereafter, the original semantic information of the 40
+                                                                                     4.4.2   Scaling Laws of TokenMixer-Large on Different Scenarios. We
+  tokens cannot be retained all the way to the final output.
+                                                                         scale up the model by increasing its dimension 𝐷, depth 𝐿, and
+• Token Semantic Alignment in Residual (TSA): Refers to                                                                          scaling factor 𝑁(for SwiGLU hidden expansion). Two key findings
+  whether the semantic meaning of tokens remains consistent
+                                                                emerge:
+  before and after the residual operation 𝐹(𝑥′) + 𝑥. In RankMixer,
+                                                           • Balanced expansion across dimensions yields greater re-  𝑥′ in 𝐹(𝑥′) corresponds to tokens after mixing, while the residual
+                                                                      turns: Unlike earlier RankMixer experiments below the 1B scale,  input 𝑥comes from tokens before mixing, leading to a semantic
+                                                   we find that expanding any single dimension—width, depth, or
+  mismatch.
+                                                                        the scaling factor—brings gains but gradually encounters a bottle-
+Since each layer of Group Transformer does not change the number
+                                                                      neck. When scaling beyond 1B parameters, a balanced increase
+of input tokens, and the semantics of each position in token_dim
+                                                                        across all dimensions is needed to achieve better returns.
+remain aligned after computing attention and pertokenFFN, it sat-
+                                                           • Larger models require more data for convergence: As illus-
+isfies all three properties mentioned above. In contrast, RankMixer
+                                                                           trated in Table 4, a model scaling from 30M to 90M parameters
+directly adds tokens before and after mixing in its residual con-
+                                                                    converges with only 14 days of training samples, whereas scaling
+nections, which breaks the semantic alignment across positions in
+                                                              from 500M to 2B requires 60 days of samples to converge fully.
+token_dim. Moreover, unless the number of new tokens is deliber-
+                                              We have also validated the scaling laws of TokenMixer-Large across
+ately designed to match the original token count in RankMixer, the
+                                                                           different business scenarios, observing significant scaling law be-
+original token residual cannot propagate effectively through the
+                                                                    havior in each case. Ultimately, in the Feed Ads, E-Commerce, and
+network. As can be seen in Table 3, TokenMixer-Large precisely
+                                                                     Live Streaming scenarios, we successfully scaled the model to 15B,
+addresses these issues in RankMixer, satisfying all three design
+                                                   7B and 4B parameters on offline experiments, as well as 7B, 4B and
+properties while achieving the best performance.
+                                                   2B parameters on online traffic, respectively, achieving substantial
+                                                                        scaling gains.
+
+                                                                     Table 4: Model Convergence Comparison on
+                                                           Douyin Live Streaming
+
+                                                               Param*     Convergence Day  ΔUAUC
+
+                                                           30m              –           –
+
+                                                            90m↑              14d          +0.94%
+
+                                                               500m↑             30d          +0.62%
+
+                                                                           2.3B↑              30d          +0.41%
+                                                                           2.3B↑(60d)         60d          +0.70%
+
+Figure 5: Scaling laws between AUC-gain and Params/Flops                 * Each row uses the previous row as the baseline.
+of various SOTA models. The x-axis uses a logarithmic scale.            The symbol ↑indicates comparison against the
+                                                                                  prior parameter scale.
+4.4  Scaling Laws
+4.4.1  Scaling Laws of SOTA Models. In Figure 5, we selected the
+two best-performing models— RankMixer and TokenMixer-Large,     4.5  Ablation Study
+and examined their scaling laws. The results show that the AUC of        4.5.1  Ablation Study for TokenMixer-Large Block. As can be seen
+both two models increases with the growth of parameters/FLOPs.     from Table 5, we conducted ablation studies on different modules
+
+===== PAGE 8 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+ Table 5: Ablation on components of TokenMixer-Large 4B         Gate Value Scaling: Meanwhile, we conducted comprehensive
+                                                                  experiments on Gate Value Scaling and found that the optimal scal-             Setting                   ΔAUC
+                                                                     ing factor varies for models with different sparsity ratios (activated
+           w/o Global Token                 −0.02%                                                                      parameters/total parameters). A model with a sparsity ratio of 1:2
+           w/o Mixing & Reverting            −0.27%
+                                                              performs best with a scaling factor of 2, whereas a model with a
+           w/o Residual                     −0.15%
+                                                                        sparsity ratio of 1:4 achieves optimal results with a scaling factor           w/o Internal Residual & AuxLoss     −0.04%
+             Pertoken SwiGLU →SwiGLU       −0.21%                   of 4. The scaling factor exhibits an inversely proportional rela-
+             Pertoken SwiGLU →Pertoken FFN   −0.10%                  tionship with the sparsity ratio. Detailed analysis can be found in
+                                                           Appendix A.6.
+
+                                                     Down Matrix Small Initialization: Initializing the last down ma-
+in TokenMixer-Large, including Tokenization, mixing&reverting,       trix FCdown in SwiGLU to 0.01 times that of the FCup/FCgate layers
+pertoken SwiGLU, and residual connections. Results show that     can significantly improve the model’s performance and training
+removing any of these modules leads to performance degradation.       stability. Detailed analysis can be found in Appendix A.7.
+Among them, "mixing & reverting" and Pertoken-SwiGLU have the
+most significant impact on overall performance.
+                                                                Table 7: Online performance of TokenMixer-Large
+   Pure Model Design: With the continuous expansion of the num-
+                                                                                 Feed Ads         E-Commerce         Live Streaming
+ber of parameters in tokenmxier-large, the benefits of these nu-
+merous small, I/O-bound, fragmented operators (Such as DCN [31]           ΔAUC  ADSS  ΔAUC  Order  GMV  ΔUAUC  Pay
+and LHUC [26]) can all be captured by tokenmxier-large itself.         Lift↑   0.35%    2.0%    0.51%    1.66%   2.98%     0.7%    1.4%
+Furthermore, since tokenmixer-large itself only contains parame-
+terless mixing and reverting operations as well as a large number
+of GroupedGemm operations, it is highly efficient. All detailed     4.6  Online Performance
+analysis can be found in Appendix A.3                                                        To validate the effectiveness of TokenMixer-Large, we have de-
+                                                               ployed it across multiple scenarios at Douyin, including feed ad-   Normalization: We conducted a thorough analysis of the posi-
+                                                                            vertising, live streaming e-commerce and general live streaming.tions for applying normalization, including pre-norm, post-norm,
+                                                            These deployments cover a majority of Douyin’s businesses andand sandwich norm. All detailed analysis can be found in Appen-
+                                                                      serve hundreds of millions of users. For each business scenario, wedix A.4
+                                                          employ distinct Key Performance Indicators:
+  Mixing Strategy: Finally, we conducted a detailed study on the                                                            • Douyin Live-Streaming E-Commerce: Gross Merchandise
+splitting strategy of the mixer. All detailed analysis can be found in                                                            Volume (GMV) and order count are used as the core online busi-
+Appendix A.5                                                                     ness metrics.
+                                                            • Douyin Feed Advertising: Advertiser Satisfaction Score (ADSS)
+ Table 6: Ablation on components of Sparse-Pertoken MoE        and Advertiser Value (ADVV) serve as the primary online busi-
+                                                                     ness indicators.
+  Setting                    ΔAUC   ΔParams  ΔFLOPs
+                                                            • Douyin Live Streaming (Non-E-Commerce): Total Payment
+  w/o Shared Expert                  −0.02%     0.0%      0.0%        Amount is adopted as the core online business metric.
+  w/o Gate Value Scaling              −0.03%     0.0%      0.0%
+                                                                  For the advertising, e-commerce, and live-streaming scenar-
+  w/o Down-Matrix Small Init          −0.03%     0.0%       0.0%
+                                                                                      ios, the online baselines are RankMixer-1B, RankMixer-150M, and  Sparse-Pertoken MoE →Sparse MoE   −0.10%     0.0%       0.0%
+                                                            RankMixer-500M, respectively. We scale up TokenMixer-Large to
+                                                                       7B, 4B, and 2B parameters correspondingly. As can be seen from Ta-
+4.5.2  Ablation Study for Sparse-Pertoken MoE. As shown in Ta-      ble 7, the results show that TokenMixer-Large delivers an increase
+ble 6, We ablated different modules in the Sparse-Pertoken MoE,      of +1.66% in orders and +2.98% in per-capita preview payment
+including the shared expert, Gate Value Scaling and Down-Matrix    GMV for e-commerce; improves ADSS by +2.0% in advertising; and
+Small Init, we found that each of them contributes positively to the      achieves a +1.4% revenue growth for live streaming.
+final performance improvement. The aforementioned operations
+introduce no additional parameters or computational overhead    5  Conclusion
+(FLOPs), and are therefore cost-free modifications.                      In this paper, we present TokenMixer-Large, an upgraded version of
+   Additionally, under the condition of aligning both the total pa-     TokenMixer. We conduct an in-depth analysis of the limitations in
+rameter count and the activated parameter count, we compared the      the original TokenMixer design and provide a detailed investigation
+sparse-pertoken MoE with the standard MoE and observed a sig-     and discussion on deep layer modeling and Sparse-Pertoken MoE.
+nificant performance drop with the standard MoE. This is because    On the engineering side, we implement a set of efficient MoE opera-
+sparse-pertoken MoE is equivalent to giving standard MoE a rout-      tors and a Token-Parallel strategy specifically designed for Pertoken
+ing prior, meaning that the experts that each token can activate are       experts. TokenMixer-Large has delivered significant offline and on-
+not shared, thus avoiding the problem of routers having difficulty       line gains across multiple scenarios at ByteDance, serving hundreds
+learning in the early stages.                                             of millions of users.
+
+===== PAGE 9 =====
+TokenMixer-Large                                                                                                        Conference’17, July 2017, Washington, DC, USA
+
+References                                                                             sequential behavior data for click-through rate prediction. In Proceedings of the
+ [1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Floren-             29th ACM International Conference on Information & Knowledge Management.
+      cia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal             2685–2692.
+     Anadkat, et al. 2023. Gpt-4 technical report. arXiv preprint arXiv:2303.08774        [22] Yanru Qu, Bohui Fang, Weinan Zhang, Ruiming Tang, Minzhe Niu, Huifeng Guo,
+      (2023).                                                                      Yong Yu, and Xiuqiang He. 2018. Product-based neural networks for user response
+ [2] Thomas Bachlechner, Bodhisattwa Prasad Majumder, Henry Mao, Gary Cottrell,             prediction over multi-field categorical data. ACM Transactions on Information
+     and Julian McAuley. 2021. Rezero is all you need: Fast convergence at large depth.            Systems (TOIS) 37, 1 (2018), 1–35.
+     In Uncertainty in Artificial Intelligence. PMLR, 1352–1361.                              [23] Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec
+ [3] Zheng Chai, Qin Ren, Xijun Xiao, Huizhi Yang, Bo Han, Sijun Zhang, Di Chen,             Radford, Mark Chen, and Ilya Sutskever. 2021. Zero-shot text-to-image generation.
+    Hui Lu, Wenlin Zhao, Lele Yu, Xionghang Xie, Shiru Ren, Xiang Sun, Yaocheng             In International conference on machine learning. Pmlr, 8821–8831.
+     Tan, Peng Xu, Yuchao Zheng, and Di Wu. 2025. LONGER: Scaling Up Long        [24] David E Rumelhart, Geoffrey E Hinton, and Ronald J Williams. 1986. Learning
+     Sequence Modeling in Industrial Recommenders. arXiv:2505.04421 [cs.IR] https:             representations by back-propagating errors. nature 323, 6088 (1986), 533–536.
+     //arxiv.org/abs/2505.04421                                                             [25] Weiping Song, Chence Shi, Zhiping Xiao, Zhijian Duan, Yewen Xu, Ming Zhang,
+ [4] Jianxin Chang, Chenbin Zhang, Zhiyi Fu, Xiaoxue Zang, Lin Guan, Jing Lu, Yiqun           and Jian Tang. 2019.  AutoInt: Automatic Feature Interaction Learning via
+     Hui, Dewei Leng, Yanan Niu, Yang Song, et al. 2023. TWIN: TWo-stage interest              Self-Attentive Neural Networks. In Proceedings of the 28th ACM International
+     network for lifelong user behavior modeling in CTR prediction at kuaishou. In             Conference on Information and Knowledge Management (Beijing, China) (CIKM
+     Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and                ’19). Association for Computing Machinery, New York, NY, USA, 1161–1170.
+     Data Mining. 3785–3794.                                                                 doi:10.1145/3357384.3357925
+ [5] Qiwei Chen, Huan Zhao, Wei Li, Pipei Huang, and Wenwu Ou. 2019. Behavior        [26] Pawel Swietojanski, Jinyu Li, and Steve Renals. 2016. Learning hidden unit con-
+     sequence transformer for e-commerce recommendation in alibaba. In Proceedings              tributions for unsupervised acoustic model adaptation. IEEE/ACM Transactions
+      of the 1st international workshop on deep learning practice for high-dimensional            on Audio, Speech, and Language Processing 24, 8 (2016), 1450–1463.
+      sparse data. 1–4.                                                                       [27] Ilya O Tolstikhin, Neil Houlsby, Alexander Kolesnikov, Lucas Beyer, Xiaohua
+ [6] Heng-Tze Cheng, Levent Koc, Jeremiah Harmsen, Tal Shaked, Tushar Chandra,             Zhai, Thomas Unterthiner, Jessica Yung, Andreas Steiner, Daniel Keysers, Jakob
+     Hrishi Aradhye, Glen Anderson, Greg Corrado, Wei Chai, Mustafa Ispir, et al.              Uszkoreit, et al. 2021. Mlp-mixer: An all-mlp architecture for vision. Advances in
+     2016. Wide & deep learning for recommender systems. In Proceedings of the 1st             neural information processing systems 34 (2021), 24261–24272.
+     workshop on deep learning for recommender systems. 7–10.                              [28] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne
+ [7] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav             Lachaux, Timothée Lacroix, Baptiste Rozière, Naman Goyal, Eric Hambro, Faisal
+     Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Se-            Azhar, et al. 2023. Llama: Open and efficient foundation language models. arXiv
+     bastian Gehrmann, et al. 2023. Palm: Scaling language modeling with pathways.              preprint arXiv:2302.13971 (2023).
+     Journal of Machine Learning Research 24, 240 (2023), 1–113.                            [29] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+ [8] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks           Aidan N Gomez, Ł ukasz Kaiser, and Illia Polosukhin. 2017. Attention is All
+      for youtube recommendations. In Proceedings of the 10th ACM conference on           you Need. In Advances in Neural Information Processing Systems, I. Guyon, U. Von
+     recommender systems. 191–198.                                                        Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett (Eds.),
+ [9] Damai Dai, Chengqi Deng, Chenggang Zhao, RX Xu, Huazuo Gao, Deli Chen,              Vol. 30. Curran Associates, Inc. https://proceedings.neurips.cc/paper_files/paper/
+      Jiashi Li, Wangding Zeng, Xingkai Yu, Yu Wu, et al. 2024. Deepseekmoe: Towards             2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+     ultimate expert specialization in mixture-of-experts language models. arXiv        [30] Ruoxi Wang, Bin Fu, Gang Fu, and Mingliang Wang. 2017. Deep & cross network
+      preprint arXiv:2401.06066 (2024).                                                               for ad click predictions. In Proceedings of the ADKDD’17. 1–7.
+[10] Alexey Dosovitskiy. 2020. An image is worth 16x16 words: Transformers for        [31] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong,
+     image recognition at scale. arXiv preprint arXiv:2010.11929 (2020).                      and Ed Chi. 2021. Dcn v2: Improved deep & cross network and practical lessons
+[11] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch transformers:              for web-scale learning to rank systems. In Proceedings of the web conference 2021.
+     Scaling to trillion parameter models with simple and efficient sparsity. Journal             1785–1797.
+      of Machine Learning Research 23, 120 (2022), 1–39.                                     [32] Ziteng Wang, Jianfei Chen, and Jun Zhu. 2024. ReMoE: Fully Differentiable
+[12] Huan Gui, Ruoxi Wang, Ke Yin, Long Jin, Maciej Kula, Taibai Xu, Lichan Hong,            Mixture-of-Experts with ReLU Routing. CoRR abs/2412.14711 (2024).  doi:10.
+    and Ed H Chi. 2023. Hiformer: Heterogeneous Feature Interactions Learning            48550/ARXIV.2412.14711 arXiv:2412.14711
+     with Transformers for Recommender Systems. arXiv preprint arXiv:2311.05884        [33] Chuhan Wu and Ruiming Tang. 2024. Performance Law of Large Language
+      (2023).                                                                              Models. arXiv preprint arXiv:2408.09895 (2024).
+[13] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017.        [34] Bencheng Yan, Yuejie Lei, Zhiyuan Zeng, Di Wang, Kaiyi Lin, Pengjie Wang, Jian
+    DeepFM: a factorization-machine based neural network for CTR prediction. arXiv            Xu, and Bo Zheng. 2025. From Scaling to Structured Expressivity: Rethinking
+      preprint arXiv:1703.04247 (2017).                                                      Transformers for CTR Prediction. arXiv preprint arXiv:2511.12081 (2025).
+[14] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma,        [35]  Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhao-
+    Mincong Huang, Xiaoguang Li, Chunzhen Jing, et al. 2025. Mtgr: Industrial-                 jie Gong, Fangda Gu, Jiayuan He, et al. 2024. Actions Speak Louder than Words:
+      scale generative recommendation framework in meituan. In Proceedings of the             Trillion-Parameter Sequential Transducers for Generative Recommendations. In
+     34th ACM International Conference on Information and Knowledge Management.               Forty-first International Conference on Machine Learning.
+     5731–5738.                                                                            [36] Buyun Zhang, Liang Luo, Yuxin Chen, Jade Nie, Xi Liu, Shen Li, Yanli Zhao,
+[15] Yuchen Jiang, Qi Li, Han Zhu, Jinbei Yu, Jin Li, Ziru Xu, Huihui Dong, and Bo           Yuchen Hao, Yantao Yao, Ellie Dingqiao Wen, et al. 2024. Wukong: Towards a
+     Zheng. 2022. Adaptive domain interest network for multi-domain recommenda-             Scaling Law for Large-Scale Recommendation. In Forty-first International Confer-
+      tion. In Proceedings of the 31st ACM International Conference on Information &             ence on Machine Learning.
+     Knowledge Management. 3212–3221.                                                   [37] Buyun Zhang, Liang Luo, Xi Liu, Jay Li, Zeliang Chen, Weilin Zhang, Xiaohan
+[16] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess,            Wei, Yuchen Hao, Michael Tsang, Wenjun Wang, et al. 2022. DHEN: A deep
+    Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020.           and hierarchical ensemble network for large-scale click-through rate prediction.
+     Scaling laws for neural language models. arXiv preprint arXiv:2001.08361 (2020).             arXiv preprint arXiv:2203.11014 (2022).
+[17] Jianxun Lian, Xiaohuan Zhou, Fuzheng Zhang, Zhongxia Chen, Xing Xie, and        [38] Biao Zhang and Rico Sennrich. 2019. Root mean square layer normalization.
+    Guangzhong Sun. 2018. xdeepfm: Combining explicit and implicit feature in-            Advances in neural information processing systems 32 (2019).
+     teractions for recommender systems. In Proceedings of the 24th ACM SIGKDD        [39] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui
+      international conference on knowledge discovery & data mining. 1754–1763.                 Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep Interest Network for Click-
+[18] Jianghao Lin, Xinyi Dai, Yunjia Xi, Weiwen Liu, Bo Chen, Hao Zhang, Yong Liu,           Through Rate Prediction. In Proceedings of the 24th ACM SIGKDD International
+    Chuhan Wu, Xiangyang Li, Chenxu Zhu, et al. 2023. How can recommender             Conference on Knowledge Discovery & Data Mining (London, United Kingdom)
+     systems benefit from large language models: A survey. ACM Transactions on          (KDD ’18). Association for Computing Machinery, New York, NY, USA, 1059–1068.
+     Information Systems (2023).                                                              doi:10.1145/3219819.3219823
+[19] Aixin Liu, Bei Feng, Bing Xue, Bingxuan Wang, Bochao Wu, Chengda Lu, Cheng-        [40]  Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han,
+     gang Zhao, Chengqi Deng, Chenyu Zhang, Chong Ruan, et al. 2024. Deepseek-v3           Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen Gong, et al. 2025. Rankmixer:
+     technical report. arXiv preprint arXiv:2412.19437 (2024).                                   Scaling up ranking models in industrial recommenders. In Proceedings of the
+[20] Ze Liu, Yutong Lin, Yue Cao, Han Hu, Yixuan Wei, Zheng Zhang, Stephen Lin,             34th ACM International Conference on Information and Knowledge Management.
+    and Baining Guo. 2021. Swin transformer: Hierarchical vision transformer us-            6309–6316.
+     ing shifted windows. In Proceedings of the IEEE/CVF international conference on        [41] Barret Zoph, Irwan Bello, Sameer Kumar, Nan Du, Yanping Huang, Jeff Dean,
+     computer vision. 10012–10022.                                          Noam Shazeer, and William Fedus. 2022. St-moe: Designing stable and transfer-
+[21] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang              able sparse expert models. arXiv preprint arXiv:2202.08906 (2022).
+     Zhu, and Kun Gai. 2020.  Search-based user interest modeling with lifelong
+
+===== PAGE 10 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+
+
+
+
+                                    Figure 6: First Enlarge Then Sparse illustration
+
+A  Appendix                                                   as the dense model (4.6B dense) with the same total number of
+                                                                  parameters as MoE. As shown, we illustrate the activation status of
+A.1  First Enlarge Then Sparse
+                                                               each token, where indices 0-2 represent routing experts and index
+The conventional approach to MoE is to directly increase the total                                                               3 represents the shared expert. We can see that the overall load is
+number of parameters while keeping the number of activated ex-                                                                              relatively balanced. Since index 3 is the always-active shared expert,
+perts constant. However, we believe that this method of increasing                                                 we can observe that the activation level of index 3 is higher than
+experts is equivalent to expanding the hidden expansion of Per-                                                                         that of indices 0-2.
+token SwiGLU in a single dimension, which always has an upper                                                               However, as the sparsity increases (1:2 to 1:8), the below one of
+limit that is easily reached. Therefore, we choose to first design a                                                                   Figure 7 shows that the load balancing of the model deteriorates
+dense model with the best performance, and then achieve efficiency                                                                         to some extent. We also tried the load balancing method of Switch
+gains by sparsifying it while minimizing performance degradation.                                                                Transformer [11] and Z-loss [41], which have some benefits. How-
+   Therefore, we choose the "First Enlarge, Then Sparse" approach.                                                                            ever, considering that the currently launched 1:2 sparsity version
+Specifically, we will refine all the FC networks in SwiGLU within                                                               has the highest ROI and does not have a load balancing problem,
+TokenMixer-large into fine-grained version and then perform sparse                                                                              this part will be explored in the future.
+activation. Figure 6 illustrates the specific forms of dense model,
+1:2 sparsity MoE, and 1:4 sparsity MoE. Currently, we can achieve    A.3  Pure Model Design
+near-zero offline/online drop with a sparsity of 1:2, and a slight
+decrease with a sparsity of 1:4. However, as the sparsity increases,
+                                                             Table 9: The effect gain brought by DCN on tokenmixer-large
+the GEMM component in SwiGLU will further decrease, so greater
+                                                                    at different parameter scales. The DCN Gain is equal to the
+sparsity gains depend on a larger model and a higher GEMM ratio.
+                                                                     effect of tokenmixer-large with DCN minus the effect of
+Therefore, we chose the version with the highest ROI of 1:2
+                                                           tokenmixer-large without DCN.
+for online deployment. Whether we can achieve sparsity greater
+than 1:8 while maintaining performance without loss is still under
+exploration.                                                           Params  DCN Gain
+
+                                                                     150M     +0.09%
+A.2  Load Balance                                                                     500M     +0.04%
+                                                                     700M     +0.00%
+
+
+                                                                         In our baseline model, we manually filtered the pooling results
+                                                                       of sequences and fed them into a DCN module for feature cross-
+                                                                            pollination. The output of this module is used as additional tokens
+                                                                       to supplement the input of the backbone network’s TokenMixer.
+                                                            However, this design has one main problems. As the complexity
+                                                                       of the backbone network TokenMixer continues to increase, the
+                                                                              effect gain brought by the front-end DCN gradually diminishes.
+                                                               Experimental data shows in Table 9 that on a model with 150M
+                                                                     parameters, DCN can bring a +0.09% gain; however, when the modelFigure 7: Sparse-Pertoken MoE Load Balance of 1:2 and 1:8
+                                                                  parameters are expanded to 700M, removing the DCN structure noversions
+                                                                   longer causes any effect loss.
+                                                                          In addition to DCN, we also experimented with integrating struc-
+  The top one of Figure 7 shows a load balancing example on e-
+                                                                         tures such as DHEN and LHUC with TokenMixer-Large, using both
+commerce 4.6B Sparse-Pertoken MoE. We use one shared expert
+                                                                               parallel and serial configurations. Practical results demonstrate that
+and three routing experts, activating a total of two experts. With a
+sparsity ratio of 1:2, it achieves the same offline/online performance      as the parameter scale of TokenMixer-Large expands, the gains
+
+===== PAGE 11 =====
+TokenMixer-Large                                                                                                        Conference’17, July 2017, Washington, DC, USA
+
+Table 12: Impact of Model Sparsity and 𝛼Settings on AUC    A.5  Mixing Strategy
+Performance
+                                              We conducted a detailed study on the splitting strategy of the mixer.
+                                                      As can be seen in Table 11, we found that different split-concat
+  Version       Sparsity  𝛼Setting  AUC Performance         strategies do not affect performance, as long as each newly mixed
+                                                         token contains all the original token information. As a control,  4B dense      –           –            –
+                                                 we attempted to mix only half of the original token information,
+                               1             -0.04%             which resulted in a significant performance drop.
+                            2            -0.00%
+  2B in 4B MoE   1:2
+                               3             -0.02%           A.6  Gate Value Scaling Analysis
+                               4             -0.05%
+                                                              During the process of converting a dense model into a MoE architec-
+                               1             -0.07%                 ture, we found that introducing a constant scaling factor 𝛼before
+                               2             -0.05%               the router function 𝑔(𝑥)—by amplifying the router’s output to en-
+  1B in 4B MoE   1:4          4            -0.03%             hance gradient updates for the selected (routed) experts—significantly
+                               6             -0.04%              improves model performance. With the inclusion of a shared expert,
+                               8             -0.05%               the MoE formulation can be expressed as:
+
+                                                                          𝐾−1
+provided by these small, numerous, and IO-bound fragmented oper-         𝑦= ∑︁ 𝑔(𝑥)𝑖· Expert𝑖(𝑥) + SharedExpert(𝑥)       (23)
+ators can be fully captured by TokenMixer-Large itself. Furthermore,                         𝑖=1
+the TokenMixer-Large Block itself achieves a high Model FLOPs        where 𝑔(𝑥) represents the routing weights, Expert𝑖denotes the 𝑖-
+Utilization (MFU) of up to 60%.                                        th expert network, and SharedExpert is the shared expert network.
+                                                                   Thus, the mathematical form of the Sparse-pertoken MoE is as
+     Table 10: Ablation on variants of Normalization             follows:
+
+                  Setting          ΔAUC                                     𝐾−1
+                Pre-Norm            –                     𝑦= 𝛼· ∑︁ 𝑔(𝑥)𝑖· Expert𝑖(𝑥) + SharedExpert(𝑥)      (24)
+                Post-Norm       +0.01% →NaN                                               𝑖=1
+               Sandwich-Norm      −0.03%                             In practice, we observed that the setting of the scaling factor
+                                                      𝛼is crucial: values that are too large or too small can degrade
+                                                                  performance. Further experiments revealed that the optimal value
+A.4  Normalization and Position                           of 𝛼is closely related to the model’s sparsity. Specifically, setting
+RMSNorm can be formulated as follows:                          𝛼inversely proportional to the current sparsity ratio yields the
+                                                                       best results, as shown in Table 12.
+                                      𝑑              vut 1                                             We argue that the Gate Value Scaling operation is effective,                      ∑︁                RMS(𝑥) =                                   𝑥2𝑖+ 𝜖                            𝑑                              and the reason for setting 𝛼to the reciprocal of the sparsity ratio
+                                          𝑖=1
+                                              𝑥𝑖                      (22)        is as follows: the gradient updates for each fully connected (FC)
+                              ¯𝑎𝑖=                                    layer in SwiGLU need to remain consistent with those in the orig-                            RMS(𝑥)
+                                                                           inal dense model. Our "first enlarge, then sparse" strategy splits                  RMSNorm(𝑥) = ¯𝑎𝑖· 𝛾
+                                                               a large kernel in SwiGLU into several smaller kernels—similar to
+  where 𝛾is the learnable parameter for normalization. Consider-      the fine-grained expert approach used in DeepSeek-MoE [9], but
+ing that the bias of the kernel matrix is mathematically redundant      with the key difference that we do not increase the number of acti-
+when the input passes through the normalization layer, and inspired      vated parameters (topk). This means that as the model is divided
+by Llama [7, 28], we remove all bias kernel matrices and replaced all     more finely, the probability of each expert being updated decreases.
+Norm in TokenMixer-large from LayerNorm to RMSNorm. In our      Therefore, we need to amplify the gradient magnitude for an expert
+tests, we achieved 8.4% increase in end-to-end throughput while     when it is activated, which is precisely what Gate Value Scaling
+maintaining the same performance. We conducted a thorough analy-      achieves.
+sis of the positions for applying normalization, including pre-norm,        Another possibility is that Gate Value Scaling increases the over-
+post-norm, and sandwich norm. As can be seen in Table 10, in        all weighted sum-pooling result of 𝛼· Í𝐾−1𝑖=1 𝑔(𝑥)𝑖· Expert𝑖(𝑥), thus
+terms of effectiveness, post-norm delivers better performance but      increasing the variance of the output at each layer of the model.
+is prone to gradient explosion. Pre-norm, while less effective than      Therefore, we tried directly increasing the initial variance of the
+post-norm, ensures stable training of the model.                      Expert kernel to simulate expanding the output of 𝛼· Í𝐾−1𝑖=1 𝑔(𝑥)𝑖·
+                                                                     Expert𝑖(𝑥) from another perspective. As shown in the table 13, di-          Table 11: Ablation on Mixing Strategy
+                                                                          rectly increasing the initial variance of the Expert kernel did not
+            Setting                    ΔAUC                improve the performance; instead, it led to a significant degradation
+              Vertical division                    –                     in results.
+            Diagonal division                  +0.00%
+          Random division                   +0.00%
+              Vertical division (half of raw tokens)   −0.08%
+
+===== PAGE 12 =====
+Conference’17, July 2017, Washington, DC, USA                                                                                         Yuchen Jiang et al.
+
+          Table 14: Small Initialization Analysis            A.7  Down-Matrix Small Initialization
+                                                          To address the convergence challenges associated with deeper mod-
+     Version             Stddev Init Value* ΔAUC               els, in addition to incorporating standard residual connections,
+                                                                         interval residual connections, and residual loss (resloss), we also     Base                        [1, 1, 1]             –
+                                                               adopted the concept from Rezero [2].      SmallInit-001             [1, 1, 0.01]          +0.03%
+                                                                  Considering we use Xavier Normal Distribution initialization,      SmallInit-01               [1, 1, 0.1]           +0.02%
+                                                          which can be formulated as follows:      SmallInit-001-All        [0.01, 0.01, 0.01]      -0.10%
+      SmallInit-001-Reverse   [0.01, 0.01, 1]        -0.01%                                         2 · 𝑠𝑐𝑎𝑙𝑒                                     𝑊∼N  0,                                (25)
+                                                                                𝑛𝑖𝑛+ 𝑛𝑜𝑢𝑡
+     * denotes [FCup, FCgate, FCdown].
+                                                       where𝑊is the kernal of FCs,𝑛𝑖𝑛/𝑛𝑜𝑢𝑡is the number of input and
+                                                                output units and 𝑠𝑐𝑎𝑙𝑒is default set to 1. We directly reduced the    Table 13: Gate Value Scaling vs. Increase Variance
+                                                                                 initialization scale of the final down-projection matrix FCdown in the
+                    Setting         ΔAUC                    SwiGLU block to 0.01, and keep FCup/FCgate layers at 1. As shown
+                   Gate Value Scaling     –                             in Figure 8, this adjustment makes the output F(x) + x behave
+                      Increase Variance    −0.07%                    more closely to an identity mapping in the early training stages,
+                                                                  thereby facilitating the convergence of deep models. Furthermore,
+                                                                     the operation FCgate(x) ∗Swish(FCgate(x)) in the SwiGLU structure
+                                                                  tends to amplify the magnitude of activations and gradients in
+                                                                   the intermediate hidden layer, which can lead to local instability.
+                                                               Reducing the initialization scale of FCdown also helps constrain the
+                                                                         scale of these intermediate representations, enhancing training
+                                                                                     stability.
+                                                         As shown in the table 14, we rigorously evaluated small initial-
+                                                                            ization across different scales (from 1 to 0.01) and different positions
+                                                                 (from all layers to reverse ordering). The results demonstrate that
+                                                                 applying small initialization specifically to 𝐹𝐶𝑑𝑜𝑤𝑛yields the best
+                                                                 performance.
+
+
+
+
+
+              Figure 8: Small Init in SwiGLU

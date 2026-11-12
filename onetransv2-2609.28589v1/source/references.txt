@@ -1,0 +1,194 @@
+[1] Joshua Ainslie, James Lee-Thorp, Michiel de Jong, Yury Zemlyanskiy, Federico Lebr´on, and Sumit Sanghai. 2023. GQA:
+     Training generalized multi-query Transformer models from multi-head checkpoints. In Proc. of EMNLP, pages 4895–4901.
+
+ [2] Edoardo Botta, Jaewon Yang, Yi-Ping Hsu, Laksh Bhasin, Yilin Chen, Prabhat Agarwal, Anirudhan Badrinath, Jiajing Xu,
+     and Charles Rosenberg. 2025. PinRec: Unified generative retrieval for Pinterest recommender systems. arXiv preprint
+     arXiv:2504.10507.
+
+ [3]  Lili Chen, Kevin Lu, Aravind Rajeswaran, Kimin Lee, Aditya Grover, Michael Laskin, Pieter Abbeel, Aravind Srinivas, and Igor
+     Mordatch. 2021. Decision transformer: Reinforcement learning via sequence modeling. In Proc. of NeurIPS.
+
+ [4] Aidan Clark, Diego de Las Casas, Aurelia Guy, Arthur Mensch, Michela Paganini, Jordan Hoffmann, Bogdan Damoc, Blake
+     Hechtman, Trevor Cai, Sebastian Borgeaud, George van den Driessche, Eliza Rutherford, Tom Hennigan, Matthew Johnson,
+     Albin Cassirer, Chris Jones, Elena Buchatskaya, David Budden, Laurent Sifre, Simon Osindero, Oriol Vinyals, Marc’Aurelio
+     Ranzato, Jack Rae, Erich Elsen, Koray Kavukcuoglu, and Karen Simonyan. 2022. Unified scaling laws for routed language
+     models. In Proc. of ICML.
+
+ [5] Damai Dai, Chengqi Deng, Chenggang Zhao, R. X. Xu, Huazuo Gao, Deli Chen, Jiashi Li, Wangding Zeng, Xingkai Yu, Y. Wu,
+     Zhenda Xie, Y. K. Li, Panpan Huang, Fuli Luo, Chong Ruan, Zhifang Sui, and Wenfeng Liang. 2024. DeepSeekMoE: Towards
+     ultimate expert specialization in mixture-of-experts language models. In Proc. of ACL, pages 1280–1297.
+
+ [6] Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher R´e. 2022. FlashAttention: Fast and memory-efficient exact
+      attention with IO-awareness. In Proc. of NeurIPS.
+
+ [7] DeepSeek-AI. 2024. DeepSeek-V3 technical report. arXiv preprint arXiv:2412.19437.
+
+ [8] John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic optimization.
+     Journal of Machine Learning Research, 12:2121–2159.
+
+ [9] William Fedus, Barret Zoph, and Noam Shazeer. 2022. Switch Transformers: Scaling to trillion parameter models with simple
+     and efficient sparsity. Journal of Machine Learning Research, 23(120):1–39.
+
+[10] Dibya Ghosh, Abhishek Gupta, Ashwin Reddy, Justin Fu, Coline Devin, Benjamin Eysenbach, and Sergey Levine. 2021.
+     Learning to reach goals via iterated supervised learning. In Proc. of ICLR.
+
+[11] Lin Guan, Jia-Qi Yang, Zhishan Zhao, Beichuan Zhang, Bo Sun, Xuanyuan Luo, Jinan Ni, Xiaowen Li, Yuhang Qi, Zhifang Fan,
+    Hangyu Wang, Qiwei Chen, Yi Cheng, Feng Zhang, and Xiao Yang. 2026. Make it long, keep it fast: End-to-end 10k-sequence
+     modeling at billion scale on Douyin. In Proc. of WWW, pages 7989–7998.
+
+[12] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017. DeepFM: A factorization-machine based
+     neural network for CTR prediction. In Proc. of IJCAI, pages 1725–1731.
+
+[13] Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma, Mincong Huang, Xiaoguang Li, Chunzhen Jing,
+    Yueming Han, Menglei Zhou, Lei Yu, Chuan Liu, and Wei Lin. 2025. MTGR: Industrial-scale generative recommendation
+     framework in Meituan. In Proc. of CIKM, pages 5731–5738.
+
+[14] Alex Henry, Prudhvi Raj Dachapally, Shubham Pawar, and Yuxuan Chen. 2020. Query-key normalization for Transformers. In
+     Findings of EMNLP, pages 4246–4253.
+
+[15] Geoffrey Hinton, Oriol Vinyals, and JeffDean. 2015. Distilling the knowledge in a neural network. In NIPS Deep Learning and
+     Representation Learning Workshop.
+
+[16] Jonathan Ho and Tim Salimans. 2021. Classifier-free diffusion guidance. In NeurIPS Workshop on Deep Generative Models and
+    Downstream Applications.
+
+[17] Xu Huang, Defu Lian, Jin Chen, Zheng Liu, Xing Xie, and Enhong Chen. 2023. Cooperative retriever and ranker in deep
+     recommenders. In Proc. of WWW, pages 1150–1161.
+
+[18] Diederik P. Kingma and Jimmy Ba. 2015. Adam: A method for stochastic optimization. In Proc. of ICLR.
+
+[19] Kuang-Huei Lee, Ofir Nachum, Mengjiao Yang, Lisa Lee, Daniel Freeman, Winnie Xu, Sergio Guadarrama, Ian Fischer, Eric
+     Jang, Henryk Michalewski, and Igor Mordatch. 2022. Multi-game decision transformers. In Proc. of NeurIPS.
+
+[20] Hanyu Li, Yi-Ping Hsu, Aditya Mantha, Prabhat Agarwal, Laksh Bhasin, Jialu Wang, Hongtao Lin, Bella Huang, Yaxin Li, Xinyi
+      Li, Chuxi Wang, Kousik Rajesh, Hooshmand Shokri Razaghi, Shunyao Li, Zongyue Qin, Jaewon Yang, James Li, Dhruvil Deven
+
+
+
+
+
+
+     Badani, Jiajing Xu, and Charles Rosenberg. 2026. UniPinRec: Unifying generative retrieval and ranking at Pinterest scale.
+     arXiv preprint arXiv:2606.00422.
+
+[21] Ilya Loshchilov and Frank Hutter. 2019. Decoupled weight decay regularization. In Proc. of ICLR.
+
+[22] Xinchen Luo, Jiangxia Cao, Tianyu Sun, Jinkai Yu, Rui Huang, Wei Yuan, Hezheng Lin, Yichen Zheng, Shiyao Wang, Qigen
+    Hu, Changqing Qiu, Jiaqi Zhang, Xu Zhang, Zhiheng Yan, Jingming Zhang, Simin Zhang, Mingxing Wen, Zhaojie Liu, Kun
+     Gai, and Guorui Zhou. 2024. QARM: Quantitative alignment multi-modal recommendation at Kuaishou. arXiv preprint
+     arXiv:2411.11739.
+
+[23] OneRec Team. 2025. OneRec technical report. arXiv preprint arXiv:2506.13695.
+
+[24] David Pardoe, Neil Daftary, Miro Furtado, Aditya Aiyer, Yu Wang, Liuqing Li, Tao Song, Lars Hertel, Young Jin Yun, Senthil
+     Radhakrishnan, Zhiwei Wang, Tommy Li, Khai Tran, Ananth Nagarajan, Ali Naqvi, Yue Zhang, Renpeng Fang, Avi Romascanu,
+     Arjun Kulothungun, Deepak Kumar, Praneeth Boda, Fedor Borisyuk, and Ruoyan Wang. 2026. CADET: Context-conditioned
+     ads CTR prediction with a decoder-only Transformer. arXiv preprint arXiv:2602.11410.
+
+[25] Razvan Pascanu, Tomas Mikolov, and Yoshua Bengio. 2013. On the difficulty of training recurrent neural networks. In Proc. of
+    ICML, pages 1310–1318.
+
+[26] Xue Bin Peng, Aviral Kumar, Grace Zhang, and Sergey Levine. 2019. Advantage-weighted regression: Simple and scalable
+      off-policy reinforcement learning. arXiv preprint arXiv:1910.00177.
+
+[27] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang Zhu, and Kun Gai. 2020. Search-based user
+      interest modeling with lifelong sequential behavior data for click-through rate prediction. In Proc. of CIKM, pages 2685–2692.
+
+[28] Reiner Pope, Sholto Douglas, Aakanksha Chowdhery, Jacob Devlin, James Bradbury, Jonathan Heek, Kefan Xiao, Shivani
+     Agrawal, and JeffDean. 2023. Efficiently scaling Transformer inference. In Proc. of MLSys.
+
+[29] Jiarui Qin, Jiachen Zhu, Bo Chen, Zhirong Liu, Weiwen Liu, Ruiming Tang, Rui Zhang, Yong Yu, and Weinan Zhang. 2022.
+     RankFlow: Joint optimization of multi-stage cascade ranking systems as flows. In Proc. of SIGIR, pages 814–824.
+
+[30] Zihan Qiu, Zekun Wang, Bo Zheng, Zeyu Huang, Kaiyue Wen, Songlin Yang, Rui Men, Le Yu, Fei Huang, Suozhi Huang,
+     Dayiheng Liu, Jingren Zhou, and Junyang Lin. 2025. Gated attention for large language models: Non-linearity, sparsity, and
+      attention-sink-free. In Proc. of NeurIPS.
+
+[31] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan H. Keshavan, Trung Vu, Lukasz Heldt, Lichan Hong, Yi Tay,
+    Vinh Q. Tran, Jonah Samost, Maciej Kula, Ed H. Chi, and Maheswaran Sathiamoorthy. 2023. Recommender systems with
+     generative retrieval. In Proc. of NeurIPS.
+
+[32] Guillaume Sanchez, Honglu Fan, Alexander Spangher, Elad Levi, Pawan Sasanka Ammanamanchi, and Stella Biderman. 2024.
+     Stay on topic with classifier-free guidance. In Proc. of ICML.
+
+[33] J¨urgen Schmidhuber. 2019. Reinforcement learning upside down: Don’t predict rewards – just map them to actions. arXiv
+     preprint arXiv:1912.02875.
+
+[34] Noam Shazeer. 2020. GLU variants improve Transformer. arXiv preprint arXiv:2002.05202.
+
+[35] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and JeffDean. 2017. Outrageously
+      large neural networks: The sparsely-gated mixture-of-experts layer. arXiv preprint arXiv:1701.06538.
+
+[36] Xiang-Rong Sheng, Feifan Yang, Litong Gong, Biao Wang, Zhangming Chan, Yujing Zhang, Yueyao Cheng, Yong-Nan Zhu,
+     Tiezheng Ge, Han Zhu, Yuning Jiang, Jian Xu, and Bo Zheng. 2024. Enhancing Taobao display advertising with multimodal
+      representations: Challenges, approaches and insights. In Proc. of CIKM, pages 4858–4865.
+
+[37] Sona Team. 2026. Sona technical report. arXiv preprint arXiv:2608.11015.
+
+[38] Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. 2024. RoFormer: Enhanced Transformer with
+      rotary position embedding. Neurocomputing, 568:127063.
+
+[39] Dekai Sun, Yiming Liu, Jiafan Zhou, Xun Liu, Chenchen Yu, Yi Li, Jun Zhang, Huan Yu, and Jie Jiang. 2026. OneRanker:
+     Unified generation and ranking with one model in industrial advertising recommendation. arXiv preprint arXiv:2603.02999.
+
+[40] Jiawei Sun, Jun Yang, Ziyue Guo, Dongyue Xu, Jianan Yan, Lifang Deng, and Xiaoyi Zeng. 2026. UniSGR: Unified framework
+      for semantic ID generation and ranking. arXiv preprint arXiv:2607.04068.
+
+[41] Shangquan Sun, Wenqi Ren, Jingzhi Li, Rui Wang, and Xiaochun Cao. 2024. Logit standardization in knowledge distillation. In
+     Proc. of CVPR, pages 15731–15740.
+
+
+
+
+[42]  Jiaxi Tang and Ke Wang. 2018. Ranking distillation: Learning compact ranking models with high performance for recommender
+     system. In Proc. of KDD.
+
+[43] Tijmen Tieleman and Geoffrey Hinton. 2012. Lecture 6.5-RMSProp: Divide the gradient by a running average of its recent
+     magnitude. COURSERA: Neural Networks for Machine Learning.
+
+[44] Chunqi Wang, Bingchao Wu, Taotian Pang, Jiahao Wang, Jie Yang, Jia Liu, Hao Zhang, Hai Zhu, Lei Shen, Shizhun Wang,
+     Bing Wang, and Xiaoyi Zeng. 2026. SORT: A systematically optimized ranking Transformer for industrial-scale recommenders.
+     arXiv preprint arXiv:2603.03988.
+
+[45] Ruoxi Wang, Rakesh Shivanna, Derek Cheng, Sagar Jain, Dong Lin, Lichan Hong, and Ed H. Chi. 2021. DCN V2: Improved
+     deep & cross network and practical lessons for web-scale learning to rank systems. In Proc. of WWW, pages 1785–1797.
+
+[46] Zhe Wang, Liqin Zhao, Biye Jiang, Guorui Zhou, Xiaoqiang Zhu, and Kun Gai. 2020. COLD: Towards the next generation of
+      pre-ranking system. arXiv preprint arXiv:2007.16122.
+
+[47] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. 2023.
+     Chain-of-thought prompting elicits reasoning in large language models. arXiv preprint arXiv:2201.11903.
+
+[48] Greg Yang, Edward J. Hu, Igor Babuschkin, Szymon Sidor, Xiaodong Liu, David Farhi, Nick Ryder, Jakub Pachocki, Weizhu
+     Chen, and Jianfeng Gao. 2021. Tensor Programs V: Tuning large neural networks via zero-shot hyperparameter transfer. In Proc.
+      of NeurIPS.
+
+[49] Greg Yang, Dingli Yu, Chen Zhu, and Soufiane Hayou. 2024. Tensor Programs VI: Feature learning in infinite-depth neural
+     networks. In Proc. of ICLR.
+
+[50] Ruochen Yang, Shuang Wen, Pengbo Xu, Yusheng Huang, Jiangxia Cao, Shuang Yang, Zhaojie Liu, Jiawei Sheng, and Tingwen
+      Liu. 2026. UniR2: Unifying generative recall and multi-objective ranking in a single decoder-only sequence. arXiv preprint
+     arXiv:2607.24439.
+
+[51] Jiaqi Zhai, Lucy Liao, Xing Liu, Yueming Wang, Rui Li, Xuan Cao, Leon Gao, Zhaojie Gong, Fangda Gu, Michael He,
+     Yinghai Lu, and Yu Shi. 2024. Actions speak louder than words: Trillion-parameter sequential transducers for generative
+     recommendations. In Proc. of ICML, pages 58484–58509.
+
+[52] Biao Zhang and Rico Sennrich. 2019. Root mean square layer normalization. In Proc. of NeurIPS.
+
+[53] Zhaoqi Zhang, Haolei Pei, Jun Guo, Yufei Feng, Hui Sun, Shaowei Liu, and Aixin Sun. 2026. OneTrans: Unified feature
+      interaction and sequence modeling with One Transformer in industrial recommender. In Proc. of WWW, pages 8162–8170.
+
+[54] Zhishan Zhao, Jingyue Gao, Yu Zhang, Shuguang Han, Siyuan Lou, Xiang-Rong Sheng, Zhe Wang, Han Zhu, Yuning Jiang, Jian
+     Xu, and Bo Zheng. 2023. COPR: Consistency-oriented pre-ranking for online advertising. In Proc. of CIKM, pages 4974–4980.
+
+[55] Guorui Zhou, Chengru Song, Xiaoqiang Zhu, Ying Fan, Han Zhu, Xiao Ma, Yanghui Yan, Junqi Jin, Han Li, and Kun Gai.
+     2018. Deep interest network for click-through rate prediction. In Proc. of KDD, pages 1059–1068.
+
+[56] Yifeng Zhou, Yuehong Hu, Zhixiang Feng, Junwei Pan, Kaihui Wu, Hanyong Li, Shangyu Zhang, Shudong Huang, Zhangbin
+     Zhu, Chengguo Yin, Haijie Gu, and Jie Jiang. 2026. TokenFormer: Unify the multi-field and sequential recommendation worlds.
+     arXiv preprint arXiv:2604.13737.
+
+[57]  Jie Zhu, Zhifang Fan, Xiaoxie Zhu, Yuchen Jiang, Hangyu Wang, Xintian Han, Haoran Ding, Xinmin Wang, Wenlin Zhao, Zhen
+     Gong, Huizhi Yang, Zheng Chai, Zhe Chen, Yuchao Zheng, Qiwei Chen, Feng Zhang, Xun Zhou, Peng Xu, Xiao Yang, Di Wu,
+     and Zuotao Liu. 2025. RankMixer: Scaling up ranking models in industrial recommenders. In Proc. of CIKM.

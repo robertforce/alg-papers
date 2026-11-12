@@ -1,0 +1,2021 @@
+
+
+===== PDF PAGE 1 =====
+
+                            SONATECHNICALREPORT
+
+
+             A SINGLE-MODELGENERATIVERECOMMENDER FORYANDEXMUSIC
+
+
+                                                    Sona Team
+
+
+We introduceSONA, a single-model generative recommender for Yandex Music. In an online A/B
+test,SONAreplaced the entire production cascade — more than 15 candidate generators followed
+by pre-rankingand ranking modelsthat consume hundredsof features, includingsignals from large
+transformermodelssuchasArgus[12]andtarget-attentionscorers—whilesignificantlyimproving
+key engagement metrics.
+The architecture ofSONAunifies candidate generation and ranking around a shared user represen-
+tation. Its encoder transforms the user’s chronological sequence of logged engagement events into
+hiddenstatesconsumedbyboththeautoregressivedecoderandtheRankingModule. Thenext-token-
+prediction and distillation objectives jointly update the encoder, coupling generation and ranking
+through the same user state. NeitherSONAnor its Teacher Ranker uses hand-engineered features;
+both operate on logged event fields and learned item representations. In the finalSONAconfiguration,
+the larger teacher supplies ranking targets during training but is absent from serving, leaving the
+encoder, decoder, and Ranking Module as a single deployed model.
+WeevaluateSONAinanonlineA/BexperimentusinglivetrafficfromMyVibeonsmartspeakers,
+oneofYandexMusic’slargestrecommendationsurfaces. Onthissurface,playbackbeginswithoutthe
+userspecifying anartist,genre, mood,orother preference. Relativeto theproductioncontrol,SONA
+produced statistically significant uplifts of+4.53%       in Active Users, the primary metric,+6.30%       in
+TotalListeningTime,and+11.42%         inLikes. Theseeffectswereincrementaltoimprovementsretained
+fromprecedingdeployments. TheActiveUsersupliftwas2.35×        theincrementpreviouslydelivered
+byArgus,thestrongestmodeldeployedonthissurfacebeforeSONA. Theseresultsshowthatasingle
+jointly trained model can replace a mature multi-stage recommendation cascade while improving
+recommendation quality on live traffic.
+
+
+
+
+
+
+                                                                                                         Argus  SONA
+
+                                                                       SONA                                     11.42
+                             SONA                                                                        10.76
+                                                                        6.30
+
+                              4.53
+
+                                                                Argus
+
+                                                                 3.69
+                      Argus
+                       1.93                 V0            V2                                V1
+          V1     V2                         1.81   V1
+   V0                                                     1.46                       V0     2.71   V2
+         0.73   0.84                               1.23                              0.00          0.00
+   0.56
+
+            Active Users                         Total Listening Time                            Likes
+          PRIMARY METRIC                           PRIMARY METRIC                           PRIMARY METRIC
+
+Figure 1| Successive transformer deployments in My Vibe on smart speakers.V0, V1, V2, and
+Argus are successive generations of transformer-based recommendation models deployed on the
+surface beforeSONA. Bars show incremental A/B uplift in percent; panels useindependent scales.
+Each deployment adds its gain on top of those retained from all previous deployments.SONAmore
+than doubles Argus on the primary Active Users metric.
+
+===== PDF PAGE 2 =====
+
+                                                                 Sona Technical Report
+
+
+Contents
+
+1   Introduction                                                                                                                                                            3
+
+2    SONAOverview                                                                                                                                                          4
+     2.1    Design Philosophy. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     4
+     2.2    Overall Framework. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     5
+
+3    SONAArchitecture                                                                                                                                                      5
+     3.1    Semantic Tokenizer. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     6
+     3.2    User History Representation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     8
+     3.3    Encoder. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .     9
+     3.4    Decoder. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   10
+     3.5    Ranking Module. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   10
+
+4    SONATraining                                                                                                                                                           11
+     4.1    Dataset Design. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   11
+     4.2    Training Framework. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   11
+
+5   Teacher Ranker                                                                                                                                                     13
+     5.1    Architecture . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   13
+     5.2    Dataset Design. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   13
+     5.3    Training Framework. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   14
+
+6   Training and Inference Infrastructure                                                                                    14
+     6.1    Training Optimizations. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   14
+     6.2    Online Training Infrastructure. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   15
+     6.3    Inference Optimizations. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   16
+
+7   Evaluation                                                                                                                                                              17
+     7.1    Evaluation Protocol and Metrics. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   17
+     7.2    Candidate Generation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   18
+     7.3    Teacher Ranker Design Ablations. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   19
+     7.4    Unified Generation and Ranking. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   20
+     7.5    Online A/B Tests. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .   22
+
+8   Conclusion, Limitations, and Future Work                                                                                              24
+
+A  Contributions and Acknowledgments                                                                          27
+
+B   Hyperparameters and Model Cards                                                                                                      27
+
+C   Notation                                                                                                                                                                 30
+
+
+
+                                                                                   2
+
+===== PDF PAGE 3 =====
+
+                                                Sona Technical Report
+
+
+1   Introduction
+
+We presentSONA, a generative recommender for Yandex Music that combines candidate generation and
+rankinginasinglemodel, evaluatedinonlineA/Bexperimentsonlivetraffic. Itsservedarchitectureisa
+transformerovertheuser’schronologicaleventhistorywithtwooutputmodules: adecoderandaRanking
+Module.  In the final experiment this single model replaces the candidate generation, pre-ranking, and
+rankingstages ofa mature recommendationcascade ofseparatelytrained models. Thereportdescribes the
+architecture, trainingrecipe, andinfrastructurethatallowed this modeltosurpassthecascadeonlivetraffic.
+Yandex Music is a subscription music-streaming service built around personalized listening: alongside
+search, curated playlists, and editorial content, the home feed, radio-style stations, and the personal My
+Vibestreamarealldrivenbyrecommendations,andrecommendedplaybackaccountsforalargeshareof
+total listening time. Theservice runs onmobile anddesktop applications,the webplayer, TVs, andsmart
+speakers with a voice assistant. My Vibe on smart speakers is our test platform forSONA. Playback begins
+without the user specifying an artist, genre, mood, or other preference. This creates a pure-recommendation
+setting for measuring recommendation quality; the surface is also one of the largest by listening time.
+Severalpropertiesdistinguishthemusicdomainfromshort-videoande-commercerecommendationand
+shapethedesignofSONA. Consumptionislargelypassive: thestreamplayscontinuouslywhiletheuser
+attends to something else, so feedback arrives as plays, skips, and occasional likes rather than deliberate
+choices. Repeated listens are the norm rather than the exception — returning to a familiar track is often
+exactly what the user wants, so repetition is signal to be modeled, not redundancy to be filtered out. These
+two properties combineinto the central tension ofthe domain: familiartracks reliably sustain timespent,
+while discovery of new favorites pays off over a longer horizon, so the recommender must continuously
+balance time spent against novelty.
+SONAformulates next-track recommendation as conditional sequence generation. The encoder consumes
+typed engagement events — including plays, skips, likes, and dislikes — together with their track identities
+andrequestcontext. FollowingtheSemanticIDformulationofRajputetal.[22]      anditsproductionsuccessors
+[8, 18, 39, 41], the decoder emits each recommendation as a short tuple of discrete Semantic IDs (SIDs)
+(Section3.1). Eachtupleis expandedinto thecatalogtracks thatshareit, andtheRanking Moduleranks the
+resultingcandidates(Section3.4). Thetwomodulesshareauserencoderthatisevaluatedonceperrequest,
+allowinggenerationandrankingtoruninasingleservedmodel. Acrosstrainingandserving,inputsare
+constructed from logged event fields and learned Semantic IDs; no component uses hand-crafted features.
+TheRankingModule’strainingsupervisioncomesfromaTeacherRanker(Section5.1),asequentialtrans-
+formeroverthesameeventvocabularyastheencoderwithacross-attentioncandidatescorer. Wetrainit
+with a two-stage initial recipe: next-item-prediction pre-training learns the sequence representation, and
+multi-head ranking fine-tuning adapts it to engagement objectives; the trained model is the distillation
+teacher. Few production reports describe this pre-training — Argus [  12] and GPSD [30] among them —
+and our ablationsmake it the load-bearing stage: it is whatlets the teacher alone, onetransformer with no
+hand-engineered features, replace a ranking model driven by hundreds of features, among them large-scale
+transformer models such as Argus [12] and target-attention scorers (Section7.5).
+Theservedmodelisconnectedtoacontinuousonline-trainingloop: anemittedlisteningeventisaggregated
+intoitssessionoverawindowof15minutes,flowsthroughreal-timeprocessingintoaqueueconsumedby
+thetrainingprocess,andfreshmodelweightsaredeliveredtoproductionevery10minutes. Endtoend, the
+latency from event emission to an updated production model is 45 minutes at the median and 60 minutes at
+the 99th percentile (Section6.2).
+WevalidateSONAbothofflineandonline. For offlinevalidation,weuseTeacherRecall@                     k tomeasure how
+closelytheRankingModulepreservestheteacher’sorderingoverthesamegeneratedcandidates(Sections7.1
+and7.4). Wethenevaluateintermediateandfinalservingconfigurationsinfiveonlineexperimentspresented
+inconceptualorder. InthefinalexperimentinMyVibeonsmartspeakers,SONAincreasesActiveUsersby
++4.53%      ,TotalListeningTimeby+6.30%      ,andLikesby+11.42%         (Section7.5). OntheprimaryActiveUsers
+metric,thisupliftis2.35×        theincrementpreviouslydeliveredbyArgus[12],thestrongestmodelpreviously
+deployed there.
+
+
+
+
+
+
+                                                              3
+
+===== PDF PAGE 4 =====
+
+                                                Sona Technical Report
+
+
+2    SONAOverview
+
+2.1   Design Philosophy
+
+Asmall numberofideas guidedus throughout theworkonSONA— inchoosingthe formulation,weighing
+alternatives,anddecidingwhat toship. Westateeachideaandthe reasoningbehind itbelow;therestofthe
+report describes the architecture, training recipe, and infrastructure they shaped.
+
+Onemodelforgenerationandranking.Largelanguagemodelsdemonstratedthatasinglemodeltrained
+end-to-end on a large corpus can absorb functions previously split across specialized components, and
+single-model generative recommenders carried this recipe into production recommendation [8, 18, 41].
+Motivated by these results, we set out to explore the potential of a single-model recommender in the music
+domain.
+
+One userrepresentation, sharedacross tasks.Weare guidedby theidea thata singleuser representation
+should serve every recommendation task built on top of it:  the encoder cost is paid once per request,
+andtheresultingrepresentationisreusedforbothgenerationandranking. Recentindustrydeployments
+showthatcandidategenerationanditem-levelrankingcanshareonebackboneatproductionscale[13,14].
+We therefore adopt Gryphon [28], a unified generation-and-ranking design, as the architecture ofSONA
+(Section3.5).
+
+No hand-engineered features.Across machine-learning domains, models given scale and data have
+matched pipelines that encode domain structure by hand: image transformers reach the accuracy of architec-
+turesbuiltaroundconvolutionalinductivebiasoncepre-trainingdataisplentiful[5],andlanguage-model
+qualityfollowssmoothscalingcurvesinparametersanddata[11]. Recommendationreproducedthepattern:
+sequence models over raw engagement events scale the same way [12], and transformer rankers over those
+sequences reach the quality of feature-rich production rankers [2, 39]. We therefore buildSONAand its
+teacheronloggedeventfieldsandlearnedSemanticIDsalone,andsetouttoexplorehowfarthatreachesin
+music recommendation.
+
+Dense supervision for ranking without hand-engineered features.Next-token prediction and action
+predictionsupply supervisionatvery differentdensities: next-tokenpredictionproducesa trainingtarget at
+everypositionofeverysequence,whileexplicitfeedbackeventsaresparse. Astrongrankingmodelwithout
+hand-engineered features must recover from data the structure such features would otherwise encode, and
+this lack of built-in inductive bias calls for training on large-scale datasets. Autoregressive training over
+engagementsequencesiswidely adoptedasthewayto leverage datasetsofthisscale[7, 39]. Wefollowthis
+recipe, and we initially train the Teacher Ranker in two stages — next-item-prediction pre-training followed
+by multi-head ranking fine-tuning [12]; our ablations find the pre-training stage crucial for the teacher’s
+quality (Table7.4).
+
+Compressayearofhistoryintoateacher,distillitdenselyintothestudent.Forencoder–decodermodels
+trained with next-token prediction on chronologically organized data, each training sample carries the
+user’s full interaction history, so both the dataset’s size on disk and the compute spent encoding it grow far
+fasterthanthenumberoftrainingsamples: everysamplere-encodesthehistoryfromscratchtosupervise
+a handful of new targets. This cost makes such datasets unsuitable for a multi-month span of dates. We
+therefore train a large-scale ranking model autoregressively on a dataset spanning a year of engagement
+logs, compressingthat historyinto itsweights, anddistill itsknowledge denselyinto theRanking Module,
+which is trained jointly with the next-token-prediction task on a dataset covering a much shorter range of
+dates (Sections4.2and5.1).
+
+Aligning generation and ranking through Rollout Distillation.We use beam-search rollouts from the
+currentdecoderas thecandidatesourceforRolloutDistillation (Section4.2). Thefrozenteacherscores the
+generatedcandidates, andthe RankingModule learnstoreproducethose scores. Because therolloutscome
+from the current decoder distribution, the distillation signal follows the candidate distribution the model
+produces at that point in training. The decoder and Ranking Module also share the user encoder, so this
+signalshapestherepresentationthatconditionsbothtasks. Inthisway,RolloutDistillationalignsgeneration
+and ranking inside the joint training objective.
+
+
+
+                                                             4
+
+===== PDF PAGE 5 =====
+
+                                                Sona Technical Report
+
+
+2.2   Overall Framework
+
+Figure2.1summarizesSONA’s serving path and training signals. At serving time, the encoder processes
+the user’s chronological event history once, producing a representation shared by the decoder and Ranking
+Module. Following the generative-recommendation paradigm, the decoder autoregressively produces a
+beamofshortSemanticIDtuples[8,18,22,39,41]. Acatalogindexmapseachtupletooneormoretracks,
+and the Ranking Module uses the shared encoder states to score and order the resulting candidates.
+Duringtraining,thesemantictokenizerconvertseachtargetitemintoitsSemanticIDsequence,providing
+the next-token-prediction objective for the decoder. The frozen teacher ranker scores decoder-generated
+candidatesandprovidesdistillationtargetsfortheRankingModule. Bothlossesback-propagatethroughthe
+sharedencoder,soitsrepresentationlearnsfromgenerationandranking. InthefinalSONAconfiguration,
+the tokenizer and teacherare used only for training; servingconsists of the encoder, decoder, deterministic
+SID-to-itemmapping,andRankingModule. Theteacherwastemporarilyaddedtolimited-traffictreatments
+in Online Experiments 1–4 (Section7.5).
+Table2.1summarizes the role and lifecycle of each component.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                       Figure 2.1.SONAarchitecture and data flow.
+
+3    SONAArchitecture
+
+This section details the components ofSONA: the semantic tokenizer, user-event representation, shared
+encoder with History Compression, autoregressive decoder, and Ranking Module.
+
+
+
+
+                                                             5
+
+===== PDF PAGE 6 =====
+
+                                                   Sona Technical Report
+
+
+
+Component                 Consumes                       Produces / role                           Optimization and lifecycle
+Semantic Tokenizer        Dense item                     A fixed SID tuple for each item,          Offline; fixed during training
+                          representations                defining decoder targets and the          and serving
+                                                         SID-to-item index
+Shared User               Chronological user             Hidden states shared by                   Training andserving;receives
+Encoder                   events                         generation and ranking                    gradients from both
+                                                                                                   next-token and distillation
+                                                                                                   objectives
+Semantic ID               Encoder states and             Beam of candidate SID tuples              Next-token training; served
+Decoder                   preceding SID tokens
+SID-to-item               Generated SIDs and             Catalog candidates                        Deterministic; no learned
+Mapper                    catalog index                                                            parameters
+Ranking Module            Encoder states and             Multi-feedback scores and final           Teacher-distilled; served
+                          candidate item / SID           ordering
+                          features
+Teacher Ranker            Event histories and            Item-level distillation targets           Separately trained and frozen
+                          candidate items
+
+                         Table 2.1.Final SONAserving components and training-only supervision.
+
+
+3.1   Semantic Tokenizer
+
+Generative recommenders face large and continuously growing item spaces, which makes the direct genera-
+tion of atomic item identifiers computationally and architecturally infeasible. Items are therefore tokenized
+into short coarse-to-fine sequences of discrete codes —SemanticIDs— drawn from a small fixed vocabulary
+[22]. This keepstheoutput spacecompact andstableas thecataloggrows,anditems withsimilar content
+or behavioralpatterns share leadingcodes, which transfersknowledge across related tracksand improves
+generalization to newly added items [18].
+The tokenizer realizes this scheme for the music catalog: it assignsevery track a fixed tuple of 3 Semantic
+IDs, drawn from 3 codebooks of 32,000 entries each.  These tuples are the decoder’s output vocabulary
+and define the SID-to-item index used at serving. The tokenizer is built offline in three stages (Figure3.1):
+content features from the hidden states of a frozen multimodal LLM, a refinement transformer trained on
+collaborative pairs, and a residual quantizer.
+For each eligible track, the frozen Qwen2.5-Omni [21] encodes the mel-spectrogram of the first90 seconds of
+audio together with a textual prompt carrying the title, artists, tags, and additional metadata. Its last-layer
+states — the track’scontentfeatures— are refined by a four-layer transformer with four attention heads and
+modeldimension512,following QARM-stylepipelines[15],and mean-pooledintoasingle 256-dimensional
+itemembeddingz for the track. Once the transformer is trained and frozen,z is the only representation the
+quantizer receives.
+
+Collaborativerefinement.Contentfeaturesaloneleavesubstitutabilityimplicit: itemsthatlistenerstreat
+as interchangeable are not necessarily neighbors in the content embedding space [9, 32]. The refinement
+transformer is therefore trained on collaboratively related track pairs, so that tracks with similar listening
+patternsreceivenearbyitemembeddings—and,afterquantization,sharedcodeprefixes. Itslosscombines
+two terms,
+                                                 L=L      InfoNCE+λ   alignLalign.
+Abatchofmcollaborativepairsyields2m  refineditemembeddings,writtenza fortrackaofthebatch. Each
+serves once as the anchor; its paired trackza+ is the positive and the remaining 2m−2         embeddings are
+negatives:
+                                                           2mX            z       a,za+)/τ
+                                    LInfoNCE =−    12m         log  exp sim(Xexp sim(z       a,zb)/τ,
+                                                          a=1
+                                                                   b̸=a
+
+
+
+
+
+                                                                 6
+
+===== PDF PAGE 7 =====
+
+                                                   Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        Figure 3.1.Tokenization pipeline. The frozen Qwen2.5-Omni runs in prefill-only mode — no decoding.
+
+
+with cosine similaritysim and temperatureτ. The alignment term keeps each item embedding close to¯ha,
+the mean of the same track’s content features,
+
+                                                                 2mXza−¯ha2,
+                                                 Lalign =   12m
+                                                                a=1
+with weightλ              align = 0.1.
+
+Collaborative pairs.Pairs are mined from two sources. Thetarget-wisestream collects co-served item
+sets from the production recommender — groups of items presented together in one recommendation
+response. The production recommender does not place tracks by the same artist in a single response, so
+theseco-occurrencesarecross-artistbyconstruction. TheNPMIstreamscoresco-listeningoftwotracks                i
+andjwith normalized pointwise mutual information,
+
+                                          NPMI(i,j) =                      1−logp(i,j)             log  p(i,j)p(i)p(j)          ,
+
+wherep(i,j)      istheprobabilitythati andj co-occurinauser’slisteninglogoverathree-monthwindowand
+p(i)    ,p(j)      arethemarginals. Onlyhigh-NPMIpairsinwhichbothtracksbelongtothesameartistarekept,so
+thetwo streamsaredisjoint. Table3.2summarizesthesources;thestreamsareconcatenated andshuffled
+before training.
+
+
+                                                                 7
+
+===== PDF PAGE 8 =====
+
+                                                     Sona Technical Report
+
+
+
+                             Pair source                                               Mining window         Pairs
+                             Target-wise (co-served, cross-artist)             3 weeks 220–240M
+                             NPMI (co-listening, same-artist)                 3 months   20M
+
+                          Table 3.2.Collaborative pair sources for the tokenizer InfoNCE objective.
+
+
+Residual quantization.The refined item embedding                      z is mapped to its Semantic ID tuple by residual
+K-means: 3levelsof32,000centroids,initializedwithk-means++ andassignedbyEuclideandistance. Each
+levelquantizestheresidualofthepreviousone,sothetupleisacoarse-to-finepaththroughthecodebooks.
+Thecomparisonsthatselectedthisconfiguration—thecodebooksizeandtheitemrepresentationsupplied
+to the quantizer — are reported in Section7.2.
+
+3.2   User History Representation
+
+The encoder input is built from the user’s logged engagement history.  For a request, the history is the
+chronological sequence
+                                                 u= (e    1,...,eT),       T≤T        max,
+where each et is one past engagement event. The same selection rule is applied in training and serving.
+HistoriesshorterthanTmax arepaddedwithasinglelearnedembeddingsharedacrossthemissingpositions.
+
+Eventembedders.Eachevent                  et isembedded bythree embedders,oneper feature group: anitemembedder
+over item identity, acontext embedderover the request surface, and afeedback embedderover the observed
+response. Table3.3lists the source signals each embedder reads and the transformations that produce its
+inputs. Every input is a logged attribute; no hand-engineered features are used.
+
+   Embedder     Source signals                                                               Construction
+   Item                track ID, artist ID, track duration                                hash track ID three times and artist ID twice into
+                                                                               onesharedembeddingtable;bucketandembed
+                                                                               track duration
+   Context          smart-speaker flag, organic-feed flag                         embed both request-surface flags
+   Feedback       like flag, played time                                                    embedthelikeflag;divideplayedtimebytrack
+                                                                               duration into the completion ratio, then bucket
+                                                                               and embed it
+
+             Table 3.3.Historical-event features and their transformations before the three input embedders.
+
+
+Continuous features.Two continuous quantities reach the embedders, and both are bucketed and embed-
+ded rather than used as raw scalars: track duration, and the completion ratio
+
+                                                          ρt =       ptmax(d         t,ϵ) ,
+
+wherep  t is played time andd       t track duration.
+
+Event token.The item embedder concatenates its five hashed identity features with the track-duration
+embeddingandprojectstheresulttoRd;thecontextandfeedbackembeddersembedeachoftheirattributes
+directly at widthdand sum them. The event token is the sum of the three embedder outputs:
+                               xt = ItemEmb(e   t)+ContextEmb(e   t)+FeedbackEmb(e   t).
+
+Encoder input.A learnedCLStoken is prepended as a global summary position, giving
+                                                     X= [x     CLS, x1, ..., xT].
+
+
+
+
+                                                                    8
+
+===== PDF PAGE 9 =====
+
+                                                    Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 3.2.History Compression, read bottom-up. Dark: the long-term block     O (no events); light: the recent blockR
+ (n r events).
+
+
+3.3   Encoder
+
+Forafullencoder,letH denotethehidden-statematrixcomputedfromtheeventsequenceX ofSection3.2,
+                                              H= Enc   θ(X),       H∈R              (T+1)×d         .
+Thedecoder(Section3.4)andRankingModule(Section3.5)consumeasharedencodermemory                                K,computed
+once per request.  The symbols distinguish the encoder’s direct output from the memory exposed to
+downstream modules: K=H       for a full encoder, whereas History Compression does not construct a full-
+depthH over all positions and instead formsK= [X    O;H R]. ThusK is the common downstream interface
+in both cases.
+
+History Compression.Attention cost grows quadratically with history length, and keeping long histories
+affordable under serving-latency budgets is a recurring constraint for industrial user models [34, 43].SONA
+thereforespendsitsdepthunevenly. ThehistoryofuptoN eventsissplitintoarecentblock         Rofthenr most
+recent events and along-termblock                O of the precedingno =N−n          r events, and the encoder applies four
+stages (Figure3.2). History Compression isused only inSONA;the Teacher Ranker (Section5.1) encodes its
+history in full.
+
+      1.  Cross-attention.Twosingle-layercross-attentionblocksleteachblockreadtheother—                          O attendsto
+          RandRattends toO— giving enriched blocks                     ˜Oand    ˜R.
+      2.  Full-history pass.One self-attention layer runs over the concatenation         [˜O;    ˜R]   , producing block
+          representationsX                    O andX       R. This is the only stage that mixes information across the whole history.
+      3.  Deep stack,recent blockonly.A stackof 7self-attention layers, whichcarries mostof theencoder’s
+          capacity, refinesX          R over then      r recent events only, yieldingH               R.
+      4.Concatenated read-out.Modules that cross-attend to the encoder read
+                                                              K= XO;H R,
+
+                                                                   9
+
+===== PDF PAGE 10 =====
+
+                                                  Sona Technical Report
+
+
+          the shared encoder memory: allN positions are visible downstream, while only the recentnr carry
+          the deep encoding.
+
+Cost.A full        L-layer encoder overN events spendsΘ(LN     2d)   in attention; ours pays the deep cost only
+overtherecentblock,reducingtheattentioncosttoΘ (Ln 2r +N    2+2n  onr)d. Thesavingcomesfromwhere
+capacity is spent, not from discarding history. We adoptN= 8192    andnr = 2048; this preserves most of
+the downstream performance of a full transformer over the same history at about half its inference cost
+(Section7.4).
+
+Block design.All transformer blocks use RMSNorm [             40] in a pre-normalization layout [35], SwiGLU
+feed-forward blocks [23], and RoPE positional embeddings [26]; the complete model cards are given in
+TablesB.4andB.5.
+
+3.4   Decoder
+
+The tokenizer (Section3.1) maps each catalog trackvto anL-level Semantic ID tuple
+                                           s(v) = (s        1(v),...,s     L(v)),       L= 3.
+The decoder is a shallow autoregressive transformer over the codebook vocabulary (TableB.5). It starts from
+BOSand generates the tuple one level at a time, conditioned on the encoded history:
+
+                                                                   LY
+                                          pθ(s 1,...,sL|u) =          pθ(s ℓ|s <ℓ,K).
+                                                                  ℓ=1
+
+From tuples to tracks.At serving time, constrained beam search masks invalid prefixes with the tokenizer
+trie, so each completed tuple maps to at least one catalog track. The codebook is not collision-free: a typical
+SID tuple is shared by a small number of catalog tracks, as is intrinsic to the Semantic ID formulation of
+Rajput et al. [22]     .  Each completed tuple is therefore expanded into the full collision class of tracks that
+quantize to it, and the Ranking Module orders the expanded candidates (Section3.5).
+
+3.5   Ranking Module
+
+The Ranking Module scores each candidate that beam search proposes against the same encoder memoryK
+the decoder attends to, following the unified generation-and-ranking design of Gryphon [28]: Semantic ID
+generation proposes candidates with high recall, and the Ranking Module orders them (Figure3.3). The
+history is encoded once, so scoring adds no second encoder pass.
+
+Candidaterepresentation.Eachcandidateisrepresentedbythreekindsoffeatures: itsitemID,itsSemantic
+ID codes c1,...,cL taken independently, and their prefix n-gram features [45].  Following the unified-
+embedding scheme of Coleman et al. [3]   , every feature is mapped by several independent hash functions
+into the embeddingtable shared with the encoder(Section3.2). The looked-up rows are concatenatedand
+projected into a single dense vectore           i.
+
+Scoring.TheRankingModulelargelyfollowsthedecoderarchitecture,withthecandidateembeddinge                                    i
+asitsinput. Astackofpre-normcross-attentionblocksrefinesthisembeddingagainsttheencodedhistory
+[36],
+                                                ˜e  i = CrossAttnBlocks(e     i,K).
+A feed-forward scoring layer maps the result tonhead scores,
+                                                     si = Head(˜e  i)∈R    n,
+oneper TeacherRankerhead,trained bydistillationfromthe teacherjointlywiththe decoder’snext-token
+objective (Section4.2).
+
+Combined score.A fixed weighted combiner collapses the          n head scores into a single scalar, and the
+expanded candidates are ordered by it to produce the final recommendation list.
+
+
+
+                                                                10
+
+===== PDF PAGE 11 =====
+
+                                                 Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 3.3.Unified generation-and-ranking architecture: the decoder and the Ranking Module attend to the same
+ encoded user history.
+
+4    SONATraining
+
+4.1   Dataset Design
+
+Thedataset isrequest-level: itsunit is asingle servedrecommendationrequest. Asample carriesthe user’s
+chronological event history up to the request and theimpressions— the items served in response, stamped
+with the request timestamp and the feedback they subsequently received. History events carry exactly the
+logged attributes of Table3.3. Samples with an empty history are dropped, and the sample stream inherits
+the traffic gates of the online loop (Section6.2).
+
+Supervision.All positive items of a request supervise the model against the shared user history: the
+tokenizermapseachimpressiontoitsSemanticIDtuple,andthepositivesformthepackedtargetsetC+(u)
+ofthenext-tokenobjective—severaltargetsperrequest,oneencoderpass(Section4.2). Thefullimpression
+list is the impression candidate source of the distillation objective, and beam-search rollouts supply its
+second source. Impressions absent from the tokenizer’s catalog snapshot are masked out of the loss.
+
+Time ordering.The dataset is organized chronologically. For initial training, target requests are split into
+day-leveltablesandthetrainerconsumesthemfromoldesttonewest. Oncethemodelentersonlinetraining
+(Section6.2),itconsumestherequeststreamdirectlyineventorder,withnosplittingintotimestampchunks.
+In both stages training sweeps time forward, and every sample conditions only on events that precede its
+request.
+
+4.2   Training Framework
+
+SONAis trained with a joint generation-and-ranking objective (Figure4.1). The decoder is supervised by
+next-token prediction (NTP) on thepositiveimpressionsof each request only — the items the user engaged
+with,mappedtotheirSemanticIDtuples(Section4.1). Theencoderrunsonceperrequest,andeverypositive
+isdecodedasanindependentteacher-forcedsequencethatcross-attendstothesharedrepresentation. The
+Ranking Module is supervised by distillation from the frozen Teacher Ranker (Section5.1): the teacher
+exposesnengagementscores percandidate, andthe RankingModule regressesamatching headonto each
+with an element-wise mean absolute error. Both objectives back-propagate into the shared encoder.
+
+Distillation sources.The distillation objective draws (user, candidate) pairs from two complementary
+sources: current-decoder rollouts and logged impressions. For each user history, beam search generates
+B SID tuples using the current decoder. The generated SIDs are resolved into catalog items; successfully
+resolveditemsformtherolloutcandidatesetB,whileunresolvedentriesareexcludedfromRankingModule
+
+                                                              11
+
+===== PDF PAGE 12 =====
+
+                                                   Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 4.1.Joint training of the decoder (    LNTP) and the Ranking Module (LDistillation, regression toward the frozen
+ Teacher Ranker) on the shared encoder.
+
+
+scoringandloss. Therolloutsetiscomplementedwiththerequest’sloggedimpressionsI,whichbroaden
+teacher supervision to items exposed in production traffic.  Writing rhc  for the teacher’s head-h score of
+candidatecandˆr                             hc  for the Ranking Module’s, each source contributes a per-head mean absolute error,
+                                    nX   1  Xˆr  hc −r   hc,     L impression =  nX   1  Xˆr  hc −r   hc.
+                       Lrollout =       |B|                                              |I|
+                                   h=1      c∈B                                     h=1      c∈I
+The joint loss sums the generative and the two distillation terms,
+                                               L=L        NTP+L    rollout+L    impression.
+
+Combined ranking score.Atserving, the         n distilled head scores are collapsed intoone scalar by thefixed
+weighted combiner of Section3.5. This score reorders the beam candidates; it enters no training loss.
+
+Training stages.Initialtrainingstartsfromrandom initializationandconsumes thedataset chronologically
+inday-levelchunks—daysinorder,requestsshuffledwithinaday—underalinearwarmup-and-decay
+learning-rate schedule.Online trainingthen consumes requests as they arrive (Section6.2), at a constant
+learning rate, the terminal rate of the decay.
+
+Optimization.Training uses AdamW with weight decay and gradient clipping; optimizer and schedule
+hyperparametersarelistedinSectionB.FSDPshardsthetrainableparameters,whilethefrozenteacherstays
+replicated in bfloat16 on every rank, adding no all-gather cost.
+
+                                                                 12
+
+===== PDF PAGE 13 =====
+
+                                                 Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure5.1.TeacherRankerarchitecture: ahistory encoderoverthe typedevent sequence(left)and acandidatescorer
+ that cross-attends to its hidden states (right).
+
+5   Teacher Ranker
+
+5.1   Architecture
+
+The teacher ranker is a large ranker without hand-engineered features, used as the distillation teacher of
+the RankingModule (Section4.2). Freed from the latency andthroughput budgets of thefinal model, it is
+largerandattendsthefulluserhistory. Itsurpassestheproductionrankerinonlineexperiments(Section7.5).
+Figure5.1shows the architecture.
+Theteachercombinesadeepuser-historyencoderoverthetypedeventsequencewithacandidatescorer.
+As inSONA’s Ranking Module (Sections3.3and3.5), the scorer largely follows the decoder architecture: it
+takesacandidateembeddingasinputandrefinesitagainsttheencoder’shiddenstatesthroughmulti-layer
+cross-attention [27, 39]. Two differences separate it from the served pair. First, its encoder iscausal: every
+position carries the user state at that point of the timeline, which unlocks autoregressive training and
+timeline-packedsupervision(Section5.3). Second,itdoesnotuseHistoryCompression—thedeepstack
+attends the full user history at every layer.
+
+Heads.Asetof engagementheadsreads fromthe scorer’soutput, eachanMLPthatnarrowstoonescalar.
+One head supplies the primary ranking signal, trained to order events by a graded engagement target;
+the others are auxiliary feedback heads, restored to calibrated logits by a learned per-head scale and bias
+(Section5.3). The complete model card is given in TableB.2.
+
+5.2   Dataset Design
+
+TheTeacherRankerfollowsatwo-stageinitialrecipe—pre-trainingwithnext-itemprediction(NIP),then
+multi-headrankingfine-tuning—followedbycontinuousrefresh(Section5.3). Bothinitialstagesandthe
+refresh runs draw on the same dataset shape. The dataset is timeline-level: its unit is a span of one user’s
+chronologicaleventtimeline, carryingthesameloggedattributesas Table3.3. Pre-training samplesconsist
+of the timeline alone, and every event in it is a next-item target. Fine-tuning samples additionally carry
+the impressionsserved alongthe timeline, withtheir graded engagement feedback. Refresh samples keep
+the fine-tuning format and are built continuously from newly logged sessions, restricted to the surface the
+model serves.
+
+Autoregressive consumption.Eachsample is consumedwith all of its targets atonce. The causalencoder
+provides, atevery position, theuser state atthat pointof the timeline,and the cross-attentionscorer reads
+each target through a custom mask that restricts it to the history preceding its anchor (Section5.3). One
+
+
+                                                              13
+
+===== PDF PAGE 14 =====
+
+                                                  Sona Technical Report
+
+
+encoder pass therefore supervises every target the timeline carries, where the request-level dataset of
+Section4.1runs the encoder once per request.
+
+Data span.Packing a timeline’s worth of targets into one encoder pass sets the affordable window: the
+teacher is trained on ayearof target events, where the joint run of Section4.1consumes several weeks.
+Compressingthatyearinto theteacher’sweights, anddistillingitdenselyintotheRanking Module,isthe
+design idea of Section2.1.
+
+5.3   Training Framework
+
+TheTeacherRankeristrainedautoregressivelyovertheuser’schronologicalengagement-eventsequence,
+using the recipe of Section5.2: NIP pre-training learns the user encoder, multi-head ranking fine-tuning
+specializes it to the signal the Ranking Module consumes, and continuous refresh keeps the fine-tuned
+teacher current. The contribution of the pre-training stage is ablated in Table7.4.
+
+Pre-training.The history encoder is pre-trained on next-item prediction, following the autoregressive
+recipe of Argus [12]: everyposition of the timeline predictsthe next engagement from itscausal user state.
+The objective is an InfoNCE contrastive loss over in-batch negatives mixed with a uniformly sampled
+tail-negativepool,withLogQcorrection[38]forthepopularitybiasofin-batchsampling. Thestagekeeps
+the encoder parameters; the prediction head is discarded.
+
+Fine-tuning.The pre-trained encoder is warm-started, the candidate scorer is attached with random
+initialization, and the model is trained as a multi-objective ranker. The primary objective ispairwise. Each
+impression is mapped to a graded engagement scale —   like>play>skip>dislike                                — and the pairwise
+headis trainedtoordertemporally adjacentimpressionswithdifferentgrades byalogistic lossonitsscore
+difference. Over the setPof ordered adjacent pairs(i,j)in whichicarries the higher grade,
+                                 Lpair =−    1     X     logσ(score        pair(i)−score        pair(j)).                                        (5.1)
+                                             |P| (i,j)∈P
+
+Pairs form both within one recommendation request and across the boundary of two adjacent ones, and
+only impressions served in recommendation requests are eligible: fine-tuning stays on the distribution the
+rankeris usedon. Theauxiliaryobjectives arepointwise: eachremaininghead fitsonebinary feedbacktarget
+with binary cross-entropyLkBCE on its calibrated logit. The heads are trained jointly against the sum of the
+pairwise and pointwise losses,
+                                                Lteacher =L    pair+X     LkBCE.
+                                                                       k
+Each impression groupattends thehistory preceding itsanchor throughthe customcross-attention maskof
+Section5.2, implemented as a dedicated Triton kernel [                  29]. Fine-tuning extends the attended history well
+beyond the pre-training length, so the scorer sees the long-range context available at scoring time.
+
+Continuousrefresh.Afterfine-tuning,theteacherisrolledforwardtothepresentandthenrefresheddaily
+onnewlyloggedsessions. Thesecontinuationrunsnarrowthetargetpairstotherecommendationsurface
+whose generative model the teacher supervises, specializing its signal to that surface.
+
+Optimization.All stages use Adam in two parameter groups — encoder and heads — with a linear-
+warmupschedule,followingKhrylchenkoetal. [12]     ,underbfloat16autocast. Sequencelengths,negative
+counts, and learning rates are listed in the model card (TableB.2).
+
+6   Training and Inference Infrastructure
+
+6.1   Training Optimizations
+
+SONAtrainsgeneration and ranking jointly and evaluates the frozen teacher onthe generated candidates in
+the same step. We co-locate all three computations on one set of GPU workers.
+
+
+
+                                                               14
+
+===== PDF PAGE 15 =====
+
+                                                Sona Technical Report
+
+
+Keepthedatapathoffthecriticalpath.AfternetworkfetchandCPUpreprocessing,theinputpipeline
+buffers prepared batches for the GPU to consume. Catalog item hashes are computed by the asynchronous
+input pipeline while training proceeds. Data preparation, hash computation, and transfer can therefore
+overlap GPU model execution.
+
+Optimize GPU execution.Weuse bfloat16 mixed precision to shorten the processing timeof each batch.
+FSDP [44] shards the trainable model state.  FlashAttention [4] supplies efficient attention kernels, and
+torch.compileoptimizes the dense model graph.
+
+Preserve numerical stability.   QKnormalization [10] boundsattention logits,and gradientclipping limits
+outlierupdates. Wealsotunethe learning-rate schedulecarefully,including warmupbeforethepeak rate
+anddecay duringtraining. These controlsare importantwhen combiningmixedprecision, longhistories,
+and the joint generation–ranking objective.
+
+6.2   Online Training Infrastructure
+
+Figure6.1shows the online-training data path.  Updates to the served model come from a continuous
+loop: user actions stream into a real-time event-processing system, are aggregated per user into sessions,
+joined with the inference-time context, and emitted as training samples; a GPU trainer consumes those
+samplesfromamessagequeueandupdatesthemodelthroughthejointobjectiveofSection4.2—next-token
+prediction and Ranking Module distillation; the updated model is checkpointed and synced back to serving
+every 10 minutes. The Teacher Ranker runs its own training pipeline (Section5.3) and is refreshed into the
+trainer every 24 hours. Measured from when a user event is emitted until the model update trained on it
+reaches serving, the end-to-end latency is45 minutes at the median and60 minutes at the 99th percentile.
+The session-attributionwindow of 15minutes described below andthe deployment cadenceof 10 minutes
+account for most of the median budget; event processing, queueing, training, and artifact upload occupy the
+remainder.
+
+Sessionaggregation.Theeventstreamispartitionedbyuserandconsumedbyastreamprocessorwhose
+per-user state is backed by a sharded distributed key–value store. The processor groups consecutive events
+intosessionsclosedby anidle gapof afewminutes andby aminimum attributionwindowof 15minutes;
+theattributionwindowalsoservesasacorrectnessbufferthatletstheinferencelogcatchuptotheevents
+thattriggeredit(below). Becausethestreamprocessorwakesaworkeronlywhenanewmessagearrives,
+session timeouts are driven by internal timer messages that the worker enqueues for itself.
+
+Traffic filtering.Emitted sessions pass through several gates: standard fraud and bot-activity filters; a
+history-length gate that keeps the gradient from being dominated by very short histories; and a model
+blacklist that drops traffic served by probe or evaluation models, which would otherwise close a feedback
+loop with the training data.
+
+Concurrentsamplestreams.Sessionaggregationisconfiguredpermodel. Severalmodelsareregistered
+atatime,eachwithitsownsessiondefinition,trafficgates,andsampleformat,andeachemittingitsown
+stream. Several onlineupdatestherefore runsidebyside overonepass oftheuser events—onefeeding the
+deployed model, the others feeding candidate variants under evaluation.
+
+Userprofilestorage.Theuserhistorythatservingandsampleconstructionbothreadisheldintwostores
+behind one logical profile. A key–value store holds the long history and is rebuilt on a batch cadence, so its
+tailtrailslivetraffic. Areal-timeprofile,writtendirectlyfromtheeventstream,holdsthelast72hoursof
+events, cappedat 1000events peruser. Aread mergesthe twoby timestampand deduplicatesthe overlap,
+resolving collisions in favor of the batch side. The window on the real-time side is what keeps the split
+worthwhile: the stream processor holds and updates abounded tail per user instead of the full 8192-event
+history, which is what keeps its state size and write load affordable at the request rate of the surface.
+
+Historyjoinviatheinferenceservice.Atrainingsampleismeaningfulonlyiftheuserhistoryitshows
+themodelmatchesthehistorytheinferencesawwhenthecandidatewasproduced;otherwisethegradient
+is computed against a state the model never observed. Two design choices make this tractable. First, the
+inferenceservice writes aninferencelogentryto areplicatedkey–value store atthe momentof serving,keyed
+by the request identifier and carrying the history-cutoff timestamp at inference time; the session aggregator
+
+                                                            15
+
+===== PDF PAGE 16 =====
+
+                                               Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure6.1.Online-traininginfrastructureforthefinalSONAconfiguration. Inthediagram,“TeacherRanker”isthe
+ frozen distillation teacher, “Train Teacher Ranker” its training pipeline, “Training Model” / “Serving Model” the
+ trainerandservingcopiesofSONA,and“InferenceLog”theper-requestservingrecordthatthesessionaggregator
+ joins by session identifier.
+
+
+joinsthisentrybysessionidentifierandstampsthesamplewiththecutoff. Second,theuserhistoryitselfis
+not propagated through the event stream. The aggregated session is posted back to the inference service,
+whichre-readstheprofilefromthetwostoresandrebuildsthesamplethroughthesamecomputationitruns
+atservingtime(Section6.3). Carryinghistoryinlineineveryeventwouldinflatethestreamingbandwidth
+byordersofmagnituderelativetotherateoftrainingsamples,whereasarebuildfromstoragestaysatthe
+rate of emitted samples.
+
+Update loop.The emitted training samples land in a message queue with at-least-once delivery and
+single-digit-secondreadlatency. TheGPUtrainerconsumesfromthequeueandappliesthejointobjectiveof
+Section4.2— the next-token-prediction and Ranking Module distillation terms — using the current model
+astherolloutsourcefordistillation. Updatedmodelsareuploadedtoamodel-artifactstoreevery10minutes
+and pulled by the serving fleet on the same cadence.
+
+6.3   Inference Optimizations
+
+The servedSONAmodel contains the shared encoder, autoregressive decoder, and Ranking Module. In the
+final production configuration, the frozen teacher remains outside the serving path and is evaluated only
+by thetrainer; temporary teacher-ranked A/B treatments useda separate experimentalpath (Section7.5).
+Generationanditem-levelrankingareexecutedbythesameGPUworkerandsharetheencodeduserstate.
+Withtheoptimizationsdescribedbelow,theservedmodelreachesamodelFLOPsutilization(MFU)of41%
+during inference.
+
+Sampleconstruction.AseparateCPUinferenceserviceassemblesthemodelinput: itreadstheuserprofile
+(Section6.2)andcomputestheeventattributesofTable3.3throughafeaturestore,thensendsthefinished
+
+
+                                                            16
+
+===== PDF PAGE 17 =====
+
+                                                   Sona Technical Report
+
+
+sample to the GPU fleet. The same feature-store processing is used at every stage — initial training, online
+training, and inference — so event attributes are computed identically on all three paths.
+
+NVIDIA Triton Inference Server.  NVIDIA Triton Inference Server separates request preparation from
+model execution. An asynchronous CPU batcher groups variable-length user histories, truncates and pads
+them to fixed input shapes, and dispatches each packed batch to a GPU worker. Fixed shapes allow the
+workertocapturethecompletemodelpathasaCUDAgraphduringinitialization. Steady-stateinference
+copies new inputs intothe captured graph and replays it, reducing framework and kernel-launch overhead
+across the complete request.
+
+Model execution.The history encoder runs once per packed batch.  Its hidden states condition every
+SemanticID decodingstep andarereused bytheRanking Module. Intermediatecandidatesremain onGPU
+throughout generation and ranking. The model subgraphs are compiled withtorch.compile, and the
+main computation uses bfloat16.
+
+Beam-search selection.With a beam width of 1024 and 32,000 logits at each Semantic ID level, top-               k
+selectionisamaterialdecodingcost. Weapplytheradix-basedselectorofYeetal.[37]      withineachparent
+beam, then merge the retained candidates into the next global beam. Catalog-prefix constraints remove
+invalid extensions, and the key–value (KV) cache follows the selected parent hypotheses.
+
+Decoder attention.Large-beamdecoding producesmany independent one-token queries with key–value
+sequences ofat most 3positions, a geometrypoorly matched tothe defaultFlashAttention tile sizes[4]. We
+therefore use a decoder self-attention kernel with tile sizes tuned for this geometry, substantially reducing
+computation overhead. The decoder maintains a KV cache across generation steps.
+
+7   Evaluation
+
+Weevaluatefourquestions. First,howdotokenizerchoice,modelcapacity,anddatavolumeaffectcandidate
+generation?  Second, how do pre-training, history length, and scorer depth affect the Teacher Ranker’s
+ranking objective? Third, which training andarchitecture choiceslet the unified modelpreserve bothtarget-
+track retrieval and the teacher’s ordering? Finally, does the selected single-model configuration improve
+engagement online? Table7.1maps each question to the model under test and the reported evidence.
+
+
+Evaluation question              Model under test                                                  Reported evidence
+Candidate generation            NTP-only encoder–decoder                                Target-track Recall@k; train NTP loss at
+                                                                                    matched exposure for the capacity sweep
+Teacher Ranker design           Teacher Ranker variants under a shared              Weighted pair accuracy (WPA) across
+                                offline protocol                                    pre-training, history-length, and
+                                                                                    scorer-depth ablations
+Unified-model transfer          Encoder–decoder and Ranking Module                  Target-track Recall@k, Teacher Recall@k,
+                                trained jointly with NTP and distillation;          and WPA
+                                teacher used only for distillation targets
+                                and reference scores
+Online performance               Intermediate treatments and the complete           Relative changes in engagement metrics
+                                SONAserving configuration                           against the control arm from the same
+                                                                                    experiment
+
+                                               Table 7.1.Scope of the evaluation.
+
+
+7.1   Evaluation Protocol and Metrics
+
+Target-trackRecall.Let           ni bethenumberoftargettracksforrequesti,andletmi(k)    bethenumberofthose
+targets found among the firstk resolved track predictions. Target-track Recall@k is the macro-average of
+min{m         i(k),k}/min{n                    i,k}   overheld-outrequestswithatleastonetarget. Themodel-capacitysweepinstead
+reports train NTP loss at matched target exposure; lower train loss is better.
+
+
+                                                                 17
+
+===== PDF PAGE 18 =====
+
+                                                    Sona Technical Report
+
+
+Teacher Recall.Teacher Recall@          k evaluates ranking fidelity conditional on candidate generation: for a
+held-outrequestr,thedecoderproducesacandidatepoolCr,andtheRankingModuleandteacherrankthe
+same pool. IfR is the setof evaluated requests andtheir scalar scores aresRM andsteacher, respectively, then
+                                                       X     1 Topk(s (r)                               ,
+                         TeacherRecall@k=                      1|R|k     RM;C r)∩Top    k(s (r)teacher;C r)
+                                                       r∈R
+where the intersection is computed within the common candidate pool.  When a configuration has no
+Ranking Module, decoder likelihood supplies its ordering.
+
+Weighted pair accuracy.   Weighted pair accuracy measures engagement-based ordering on held-out pairs
+of temporally adjacent impressions with different target weights. Ifti is the predefined target weight of
+impressioniandPcontains pairs witht                               i >tj, then
+                                                      P
+                      WeightedPairAccuracy =              (i,j)∈P     (t i−t   j)1{score      pair(i)>score        pair(j)}P
+
+                                                                            (i,j)∈P     (t i−t   j)                      .                      (7.1)
+Pairs farther apart in target weight therefore contribute more. All three offline metrics are higher-is-better.
+
+7.2   Candidate Generation
+
+These experimentsevaluate an NTP-onlyencoder–decoder, withoutthe Ranking Moduleor teacher. The
+tokenizer and data-volume ablations use Target-track Recall@k on held-out requests; the capacity sweep
+compares train NTP loss at matched target exposure. We vary the tokenizer, model size, and training-data
+volume.
+
+Semantic tokenizer.  Each tokenizer maps a dense track representation to a three-code Semantic ID tuple
+usingresidualK-means. Wevarycodebooksizeanditemrepresentationindependently,regeneratingtheIDs
+andretrainingtheretrievalmodelforeachsetting. CLMR,acontrastivelytrainedmusic-audioencoder[24],
+providestheaudio-onlybaseline. HoldingCLMRembeddingsfixed,wecomparethree-levelquantizerswith
+8,192    or32,000      entriesper codebook. Holding thequantizerconfiguration atthree32,000     -entrycodebooks,
+we compare raw CLMR, CLMR with an InfoNCE-trained residual projection on collaborative pairs and the
+Qwen2.5-Omni audio-and-metadata representation with transformer-based collaborative refinement from
+Section3.1.
+
+                                                Item representation                     Recall@10  Recall@100  Recall@1000
+  Codebook size     Recall@1000                 CLMR audio embedding0.1848         0.4712           0.8111
+  3×8,192                  0.8036               CLMR + collaborative
+  3×32,000          0.8111                      projection                         0.2005         0.4873           0.8139
+                                                Qwen2.5-Omni + collaborative
+         (a)Codebook size.                      refinement                   0.2171       0.5362         0.8524
+
+                                                                           (b)Item representation.
+
+ Table 7.2.Semantic-tokenizer ablations. Each subtable varies one component and holds the other fixed. All variants
+ use the same held-out set.
+
+
+We select the3×32k      codebook and refined Qwen2.5-Omni representation, which provides the strongest
+retrieval result in this ablation.
+
+Model size.The model-size sweep varies encoder–decoder capacity while fixing the layer allocation, data
+window, objective, and 8192-event histories. We report train NTP loss against cumulative packed-target
+exposure. TheSmall,Medium,and2×  Mediumconfigurationscontain20M,130M,and260Mtransformer-
+core parameters, respectively. Their total learnable counts, including embeddings and output heads, are
+264M, 485M, and 659M.
+
+
+
+
+                                                                  18
+
+===== PDF PAGE 19 =====
+
+                                                                                Sona Technical Report
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                           Figure7.1.TrainNTPlossoftheSmall,Medium,and     2×  Mediumconfigurationsatmatchedcumulativepacked-target
+                           exposure.
+
+
+                          Increasing capacity consistently lowers train NTP loss over the measured exposure range.
+
+                          Training-datavolume.WenextfixtheMediumbackbone,2k-eventhistories,tokenizer,held-outset,and
+                          optimization recipe. Each run makes one chronological pass over a longer log window.
+
+                                                    Training window     Train loss     Recall@10     Recall@100     Recall@1000
+                                                    1 week                           2.2735            0.1798             0.4979               0.8333
+                                                    2 weeks                          2.1061            0.2126             0.5576               0.8640
+                                                    4 weeks                          2.0800            0.2388             0.5993               0.8849
+                                                    8 weeks                          2.0427            0.2519             0.6178               0.8947
+
+                           Table 7.3.Final encoder–decoder backbone train loss and recall as the unique chronological training-data window
+                           grows. Each run makes one pass over its window.
+
+
+                          The point estimates improve monotonically as the one-pass training window grows, including from 4 weeks
+                          to8weeks. Togetherwiththeseparatedcapacitycurves,thesweepshowsnoobservedplateauwithinthe
+                          measured ranges.
+
+                          7.3   Teacher Ranker Design Ablations
+
+                       Small (20M core)These experiments compare Teacher Ranker variants using the held-out engagement-pair protocol and WPAMedium (130M core)2×Medium (260M core)
+                          defined above. They isolate choices within the teacher— initial pre-training,attended history length, and
+                          candidate-scorer depth.
+2.3
+                          Pre-training.Wecomparethetwo-stageinitialrecipewithdirectfine-tuningfromrandominitialization.
+                          Both variants use an8k  -event history and a six-layer candidate scorer; the only change is whether next-item-
+2.2                       prediction pre-training precedes ranking fine-tuning.
+
+
+
+
+2.1
+
+
+
+  2                                                                                            19
+
+
+
+1.9
+              0.5           0.75            1            1.25           1.5           1.75            2            2.25
+                                          Cumulative packed targets (billions)
+
+===== PDF PAGE 20 =====
+
+                                                        Sona Technical Report
+
+
+
+                              Configuration                                                     Weighted pair accuracy
+                              Teacher, no pre-training                                                    0.6153
+                              Teacher, two-stage initial recipe (selected)    0.6215
+
+ Table7.4.TeacherRankerpre-trainingablationatfixed      8k  -eventhistoryandsix-layercandidatescorer. Thefirstrow
+ removes only the next-item-prediction pre-training stage of Section5.3.
+
+
+The gain establishes NTP pre-training as part of the selected Teacher Ranker recipe.
+
+Historylengthandscorerdepth.Wenextvarybothaxeswhileholdingtheremainingteacherconfiguration
+fixed.
+
+                                         History     Scorer depth     Weighted pair accuracy
+                                                      1                                          0.6080
+                                                      2                                          0.6105
+                                         2k           4                                          0.6124
+                                                      6                                          0.6134
+                                                      8                                          0.6138
+                                                      1                                          0.6159
+                                                      2                                          0.6189
+                                         8k           4                                          0.6207
+                                                      6 (selected)                        0.6215
+                                                      8                                        0.6219
+
+ Table 7.5.Teacher Ranker WPA point estimates as candidate-scorer depth and attended history length vary on the
+ same held-out engagement-label set.
+
+
+Longer attended histories provide consistent gains across scorer depths.  We use the six-layer, 8k -event
+configuration in subsequent distillation and limited-traffic experiments.
+
+7.4   Unified Generation and Ranking
+
+Withtheteacherconfigurationfixed,theseofflineexperimentsevaluatetheencoder,decoder,andRanking
+Module trained jointly with NTP and distillation. The teacher supplies distillation targets and evaluation
+referencescoresbut is not part of theevaluated model. Wereport themetrics defined in Section7.1while
+varyingthedistillationloss,candidatesource,trainingrolloutbeamsize,RankingModuledepth,andhistory
+encoding.
+
+Experimental sequence.All variants use the components of Section3and a 2-week training window.
+We report encoder, decoder, and Ranking Module layer counts separately in theE,D, andR columns of
+Table7.7. Adashinthe           R columndenotesdecoder-likelihoodorderingwithoutaRankingModule. Table7.6
+variesonefactoratatimearoundasharedreference: MAEdistillation,rolloutsplusloggedimpressions,a
+training rollout beam of32, 2k-event histories, and a model withE= 7  ,D= 2   , andR= 1   . The daggered
+entry in each block is therefore the same reference run. Every variant is evaluated with the fixed serving
+beamB           eval = 1024. We then increaseRto 4 and use that architecture for the history ablations.
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                      20
+
+===== PDF PAGE 21 =====
+
+                                                          Sona Technical Report
+
+
+
+                                                             Target-track         Teacher         Teacher
+                            Configuration                    Recall@1000        Recall@10       Recall@100     WPA
+                             Distillationloss
+                            MAE†                                   0.8615          0.5654  0.73440.5892
+                            MSE                              0.8671  0.5748 0.73290.5915
+                            Huber                       0.8679    0.5568          0.7220       0.5894
+                            KL                                   0.8662          0.5452          0.7151       0.5860
+                             Distillationcandidatesource
+                            Rollouts + impressions†        0.8615  0.5654        0.7344      0.5892
+                            Rollouts only                 0.8610          0.5618          0.7288       0.5730
+                            Impressions only          0.8663    0.2983          0.5281       0.5872
+                             Trainingrolloutbeamsize
+                            32†                                        0.8615          0.5654          0.7344       0.5892
+                            64                                     0.8565          0.5661          0.7359       0.5901
+                            128                                0.8616         0.5762        0.7427      0.5905
+
+ Table 7.6.One-factor unified-model ablations around the shared reference: MAE, rollouts plus impressions, training
+ rollout beam32, 2k-event history,E= 7,D= 2, andR= 1. The daggered entries are the same reference run.
+
+
+Distillation loss.We compare MAE, MSE, Huber, and pairwise KL on a held-out split (Table7.6). No
+loss dominatesacross retrieval,ranking fidelity, andengagement-based ordering,so weretainMAE asthe
+reference for the subsequent ablations.
+
+Distillation candidate distribution.Rollouts come from the current decoder; impressions come from
+logged requests. Impressions alone have the highest retrievalpoint estimate but much lower Teacher Recall
+thaneither configurationcontaining rollouts. Combiningboth sources keepsTeacherRecall closeto rollouts
+only and has the higher WPA point estimate, so we use both sources.
+
+Training rollout beam size.The training beam        Btrain determines how many decoder candidates the
+Ranking Module sees per training prompt; it is distinct from the fixed evaluation beamBeval. Increasing
+Btrain from 32 to 128 gives the highest Teacher Recall point estimates but quadruples the number of rollout
+candidates scored during training. We retainB          train = 32as the lower-cost reference (Table7.6).
+
+                                     Configuration                                                       Metrics
+                      History                     History               Target-track       Teacher        Teacher
+                     encoding                     LengthE D R           Recall@1000       Recall@10     Recall@100   WPA
+                     Full attention               2k           7   2   –     0.8656         0.0381        0.1936      0.5478
+                     Full attention               2k           7   2   1     0.8615         0.5654        0.7344      0.5892
+                     Full attention               2k           7   2   4     0.8656         0.6005        0.7501      0.5937
+                     Full attention               8k           7   2   4    0.8722       0.6586      0.79970.6029
+                     History Compression 8k           7   2   4     0.8709         0.6474        0.78930.6033
+
+ Table 7.7.Ranking Module depth followed by history-length and history-encoding ablations.  The      E, D, and R
+ columns report layer counts separately;R=–       denotes decoder-likelihood ordering without a Ranking Module. The
+ depth study increasesRfrom 1 to 4, and the history study fixes the latter depth.
+
+
+Ranking Module depth and history encoding.Table7.7first scales the Ranking Module with 2k-event
+histories. Moving from decoder-likelihood ordering (R=–      ) to one scorer layer substantially raises Teacher
+Recall and WPA; increasingRto 4 raises the Teacher Recall point estimate further.
+WithR= 4    fixed, extending full attention to 8k events gives the highest Target-track Recall and Teacher
+Recallpointestimates. HistoryCompression(Section3.3andFigure3.2)hasclosevaluesandthehighest
+WPA point estimate while applying the deep encoder only to recent events. We select this configuration for
+the final model.
+
+
+
+                                                                          21
+
+===== PDF PAGE 22 =====
+
+                                                      Sona Technical Report
+
+
+7.5   Online A/B Tests
+
+Unless marked †, reported treatment–control deltas are significant atp <0.01      . Five controlled A/B tests
+evaluateservingconfigurationsonMyVibetrafficfromsmartspeakers. Experiments1–3examineteacher-
+assistedconfigurations,Experiment4evaluatesthedistilledservingmodel, andExperiment5evaluatesthe
+complete SONAsystem.
+ActiveUsersistheprimarymetric; wealsoreportTotalListeningTime,Likes,“Repeat”Commands,and
+DeeplyEngagedUsers. Everytableentryisarelativepercentagechangefromtheproductioncontrolarmin
+the same experiment.
+
+Experiment 1: Likes score.An NTP-only encoder–decoder generates candidates, which the teacher orders
+using its pairwise score plus a weighted likes score. We compare the production control with three teacher-
+assistedtreatments: pairwisescoringalone(weight0),andlikes-scoreweightsαand2α  . Eachgroupcontains
+5% ofusers. The teacherattends to 8kevents and theencoder–decoderto 2k; itsserving cost limitstraffic
+and statistical power (Table7.8).
+
+                       Metric                               Pairwise only (0)   +αLikes score   +2αLikes score
+                       Total Listening Time        +2.05%                +2.45%               +2.28%
+                       Likes                      −1.03%                       †               +6.56%              +11.93%
+                       “Repeat” Commands+7.43%               +12.89%              +12.57%
+                       Active Users                 +1.51%                +1.83%               +1.53%
+                       Deeply Engaged Users +2.61%                +2.87%               +2.80%
+
+ Table 7.8.Experiment 1:  control-relative changes for Likes-score weights in the teacher’s ranking score, on the
+ NTP-only encoder–decoder stack.
+
+
+The results support retaining a non-zero likes score in the teacher.
+
+Experiment 2: Semantic ID features in the Teacher Ranker.  Both treatments use the same NTP-only
+encoder–decoder for candidate generation and the teacher for ordering.  The ablation changes only the
+teacher’s candidate features: one teacher is trained without Semantic ID (SID) features, while the other
+includes them. Control and both treatments each contain 4% of users (Table7.9).
+
+                   Metric                                 Teacher without SID features     Teacher with SID features
+                   Total Listening Time                   +2.60%                                    +3.18%
+                   Likes                                       +11.13%                                  +19.86%
+                   “Repeat” Commands     +15.88%                                  +20.52%
+                   Active Users                            +1.98%                                    +2.23%
+                   Deeply Engaged Users             +2.95%                                    +3.80%
+
+ Table7.9.Experiment2: control-relativechangeswhentheteacher’sSIDcandidatefeaturesaretheonlydifference
+ between treatments; both use the same NTP-only encoder–decoder.
+
+
+We therefore retain SID features in the teacher.
+
+Experiment 3:  Teacher Ranker and candidate generation.We test the teacher with two candidate-
+generation paths. One treatment replaces only the production ranker; the other also replaces production
+candidate generationwith the encoder–decoder. Bothuse only the teacher’spairwise score, matching the
+scoring objective across treatments. Serving cost limits each split to 3% of users (Table7.10).
+
+
+
+
+
+
+
+
+                                                                     22
+
+===== PDF PAGE 23 =====
+
+                                                        Sona Technical Report
+
+
+
+                            Metric                                 Teacher Ranker     Enc–dec + Teacher Ranker
+                            Total Listening Time        +1.64%                         +3.63%
+                            Likes                             +1.48%                       †                   −0.54%         †
+                            “Repeat” Commands+4.68%                                        †                        +5.02%         †
+                            Active Users                 +1.22%                         +2.72%
+                            Deeply Engaged Users  +1.83%                         +4.06%
+
+ Table 7.10.Experiment 3: the Teacher Ranker replacing the production ranker, and the NTP-only encoder–decoder
+ with Teacher Ranker ordering replacing the full stack.
+
+
+TheTeacherRankercansuccessfullyreplacetheproductionranker,andthefurtherreplacementofcandidate
+generation by the encoder–decoder shows promising results toward replacing the full stack.
+
+Experiment4: distillation.Wecomparethedistilledmodelwiththesamecandidategeneratorre-ranked
+by the teacher. Both treatments use the encoder–decoder trained with the joint objective of Section4.2and
+2k-event histories. One orders candidates with the distilled Ranking Module; the other uses the Teacher
+Ranker,whichattendsto8kevents. Bothincludethelikesscore. Controlandbothtreatmentseachcontain
+8% of users (Table7.11).
+
+                           Metric                                 Distilled model     Distilled + Teacher Ranker
+                           Total Listening Time         +1.62%                          +4.32%
+                           Likes                             +7.12%                         +11.81%
+                           “Repeat” Commands+15.25%                        +14.93%
+                           Active Users                  +1.41%                          +2.81%
+                           Deeply Engaged Users  +2.78%                          +5.11%
+
+ Table 7.11.Experiment 4: the distilled single model, alone and re-ranked by the Teacher Ranker, replacing the full
+ stack.
+
+
+The distilled-model result shows that the production cascade can be replaced without serving the teacher.
+
+Experiment5:SONA.   Thefifthexperimentstudiesthefurtherimprovementoftherecipebyextendingthe
+userhistoryto8192eventswithHistoryCompression. Ithastwosplits—controlandSONA,thefullrecipe
+describedinthisreport—andranfor7days on15%ofrandomlyselectedusersineachsplit. Hardbusiness
+rules that restrict production output are preserved (Table7.12).
+
+                                        Metric                                 Relative change vs control
+                                        Total Listening Time                 +6.30%
+                                        Likes                                     +11.42%
+                                        “Repeat” Commands  +17.99%
+                                        Active Users                          +4.53%
+                                        Deeply Engaged Users          +7.37%
+
+                Table 7.12.Experiment 5: the single SONAmodel replaces the whole recommendation stack.
+
+
+A key difference from Experiment 4 is the available user context: Experiment 4 uses 2k-event histories,
+whereas Experiment 5 extends the history to 8192 events with History Compression. The offline history
+ablation (Table7.7) shows material gains from the longer context, so this change is an important part of
+the completeSONAconfiguration. Because the two online experiments were conducted separately, their
+difference does not isolate the causal contribution of history length alone.
+On theprimary ActiveUsers metric,SONA’s               +4.53%       control-relative upliftis2.35×        as largeas the+1.93%
+uplift previously recorded for Argus [12], the strongest model previously deployed on this surface.
+
+
+
+                                                                       23
+
+===== PDF PAGE 24 =====
+
+                                               Sona Technical Report
+
+
+8   Conclusion, Limitations, and Future Work
+
+Thistechnicalreportdemonstratesthatamatureindustrialrecommendationstack—candidategeneration,
+pre-ranking, and ranking — can be replaced by a single model trained and served end to end.SONA
+generatescandidatesand ranksthemwithonetransformer overtheuser’sraweventhistory,supervised by
+next-tokenpredictionandbydistillationfromaTeacherRankerwithouthand-engineeredfeatures. Inits
+final online A/B test, it improves all five reported engagement metrics relative to the production control
+(Section7.5). Theremainderofthissectionliststhelimitationsofthepresentsystemandthedirectionswe
+are pursuing next.
+
+Toward full deployment.Despite the major improvements in core platform metrics, we have not yet
+deployedSONAon full traffic.SONAintroduces significant changes to the existing stack, and we want
+to validate it in a long-term experiment spanning a multi-month window. We also observed thatSONA’s
+catalog coverage is lower than that of the production stack, and we are going to investigate this effect.
+
+Other surfaces.This report validatesSONAon one of our recommendation surfaces. Full deployment
+requires validating the approach on the other surfaces, and we leave this investigation for future work.
+
+Model scaling.Across themeasuredcapacity and dataranges, the reported pointestimates continueto
+improveatthelargesttestedsettings(Section7.2). Wewillcontinueenlargingthemodel’scapacity,including
+sparse mixture-of-experts backbones, the adoption of sparse and linear attention [16], and a persistent
+cross-request KV cache.
+
+Test-timescaling.Thepotentialoftest-timescalingisstillunderexplored. Beamsearchprovidessuchan
+axis — widening the beam trades inference compute for candidate quality — but how to leverage test-time
+scaling properly remains an open question.
+
+Content exploration.Wedid notnotice anydegradation in contentexploration, whichcould beexplained
+bySONAbeing trained on production logs. We leave further investigation of fresh-content behavior for
+future work.
+
+Reinforcementlearning.Reinforcement-learningpost-traininghasprovedeffectiveforLLMs[                1,6,17,19,
+25],andindustrialgenerativerecommendersincreasinglyuseRLtoaligngenerationwithengagementand
+businessobjectives[8,18,20,31,33,42,46]. Recommendationisanaturalfit: loggeduserfeedbacksupplies
+a verifiable reward, and that reward is tightly coupled with the business objectives the platform optimizes.
+We adoptatrainingstageonly onceacontrolledcomparisondemonstrates itscontribution,andforRL we
+havenotyetbuiltthatevidence;therecipereportedhereisthereforefullysupervised. Promisingdirections
+forSONAincludelong-termrewardmodelingandRLVR-stylepost-trainingonuserfeedback,andweleave
+their controlled evaluation to future work.
+
+References
+ [1]Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain,
+     Stanislav Fort, Deep Ganguli, Tom Henighan, et al.  Training a helpful and harmless assistant with
+     reinforcement learning from human feedback.arXivpreprintarXiv:2204.05862, 2022.
+ [2]  Fedor Borisyuk, Lars Hertel, Ganesh Parameswaran, Gaurav Srivastava, Sudarshan Srinivasa Ra-
+     manujam,Borja Ocejo,PengDu, AndreiAkterskii,Neil Daftary, ShaoTang,DaqiSun, QiangCharles
+     Xiao, Deepesh Nathani, Mohit Kothari, Yun Dai, Guoyao Li, and Aman Gupta.  From features to
+     transformers: Redefining ranking for scalable impact.arXiv preprint arXiv:2502.03417, 2025.  URL
+     https://arxiv.org/abs/2502.03417.
+ [3]  Benjamin Coleman, Wang-Cheng Kang, Matthew Fahrbach, Ruoxi Wang, Lichan Hong, Ed H. Chi,
+     and Derek Zhiyuan Cheng. Unified embedding: Battle-tested feature representations for web-scale ml
+     systems. InAdvancesinNeuralInformationProcessingSystems,2023. URL              https://arxiv.org/abs/
+     2305.12102.
+ [4]  Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, and Christopher Ré.  Flashattention:  Fast and
+     memory-efficientexact attentionwith io-awareness.arXivpreprintarXiv:2205.14135, 2022. URL                                 https:
+     //arxiv.org/abs/2205.14135.
+
+                                                            24
+
+===== PDF PAGE 25 =====
+
+                                              Sona Technical Report
+
+
+ [5]  Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas
+     Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit,
+     and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. In
+     International Conference on Learning Representations (ICLR), 2021.  URL          https://arxiv.org/abs/
+     2010.11929.
+ [6]  DayaGuo,DejianYang,HaoweiZhang,JunxiaoSong,RuoyuZhang,RunxinXu,QihaoZhu,Shirong
+     Ma,PeiyiWang,XiaoBi,etal. Deepseek-r1: Incentivizingreasoningcapabilityinllmsviareinforcement
+     learning.arXivpreprintarXiv:2501.12948, 2025.
+ [7]  Ruidong Han, Bin Yin, Shangyu Chen, He Jiang, Fei Jiang, Xiang Li, Chi Ma, Mincong Huang, Xi-
+     aoguang Li, Chunzhen Jing, Yueming Han, Menglei Zhou, Lei Yu, Chuan Liu, and Wei Lin.  Mtgr:
+     Industrial-scalegenerativerecommendationframeworkinmeituan.arXivpreprintarXiv:2505.18654,
+     2025. URLhttps://arxiv.org/abs/2505.18654.
+ [8]  XuegangHao,MingZhang,AlexLi,etal. Oxygenrec: Aninstruction-followinggenerativeframework
+     fore-commercerecommendation.arXivpreprintarXiv:2512.22386,2025. URL                                                 https://arxiv.org/
+     abs/2512.22386.
+ [9]  Ruining He,  Lukasz Heldt,  Lichan Hong,  Raghunandan Keshavan,  Shifan Mao,  Nikhil Mehta,
+     ZhengyangSu,AliciaTsai,YueqiWang,Shao-ChuanWang,XinyangYi,LexiBaugher,BaykalCakici,
+     EdH.Chi,CristosGoodrow,NingrenHan,HeMa,RomerRosales,AbbyVanSoest,Su-LinWu,Weilong
+     Yang,andYilinZheng. Plum: Adaptingpre-trainedlanguagemodelsforindustrial-scalegenerativerec-
+     ommendations.arXivpreprintarXiv:2510.07784,2025. URL                                               https://arxiv.org/abs/2510.07784.
+[10]  Alex Henry, Prudhvi Raj Dachapally, Shubham Pawar, and Yuxuan Chen. Query-key normalization for
+     transformers.FindingsofEMNLP, 2020. URLhttps://arxiv.org/abs/2010.04245.
+[11]  JaredKaplan,SamMcCandlish,TomHenighan,TomB.Brown,BenjaminChess,RewonChild,Scott
+     Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models.arXiv
+     preprintarXiv:2001.08361, 2020. URLhttps://arxiv.org/abs/2001.08361.
+[12]  Kirill Khrylchenko, Artem Matveev, Sergei Makeev, and Vladimir Baikalov.  Scaling recommender
+     transformerstoonebillionparameters. InProceedingsofthe32ndACMSIGKDDConferenceonKnowledge
+     DiscoveryandDataMining(KDD), 2026. URLhttps://arxiv.org/abs/2507.15994.
+[13]  Hanyu Li, Yi-Ping Hsu, Aditya Mantha, Prabhat Agarwal, Laksh Bhasin, Jialu Wang, Hongtao Lin,
+     Bella Huang, Yaxin Li, Xinyi Li, et al. Unipinrec: Unifying generative retrieval and ranking at pinterest
+     scale.arXivpreprintarXiv:2606.00422, 2026.
+[14]  Yu Liu and Jiangxia Cao. Harmonizing generative retrieval and ranking in chain-of-recommendation.
+     arXivpreprintarXiv:2604.25787, 2026. URLhttps://arxiv.org/abs/2604.25787.
+[15]  Xinchen Luo, Jiangxia Cao, et al.  Qarm: Quantitative alignment multi-modal recommendation at
+     kuaishou.arXivpreprintarXiv:2411.11739, 2024.
+[16]  Artem Matveev, Vladislav Tytskiy, Sergei Makeev, and Sergei Liamaev.  Gated bidirectional linear
+     attentionforgenerativeretrieval.arXivpreprintarXiv:2606.07317,2026. URL                                     https://arxiv.org/
+     abs/2606.07317.
+[17]  ReiichiroNakano,JacobHilton,SuchirBalaji,JeffWu,LongOuyang,ChristinaKim,ChristopherHesse,
+     ShantanuJain,VineetKosaraju,WilliamSaunders,etal. Webgpt: Browser-assistedquestion-answering
+     with human feedback.arXivpreprintarXiv:2112.09332, 2021.
+[18]  OneRec Team. Onerec technicalreport.arXivpreprintarXiv:2506.13695, 2025. URL                                  https://arxiv.
+     org/abs/2506.13695.
+[19]  Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong
+     Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al.   Training language models to follow
+     instructions with human feedback.Advances in Neural Information Processing Systems, 2022.  URL
+     https://arxiv.org/abs/2203.02155.
+[20]  Junyan Qiu et al.   Ega-v1:  Unifying online advertising with end-to-end learning.arXiv preprint
+     arXiv:2505.19755, 2025.
+[21]  Qwen Team.  Qwen2.5-omni technical report.arXiv preprint arXiv:2503.20215, 2025.  URL                                  https:
+     //arxiv.org/abs/2503.20215.
+[22]  Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Hulikal Keshavan, Trung Vu, Lukasz
+     Heldt, Lichan Hong, Yi Tay, Vinh Tran, Jonah Samost, et al. Recommender systems with generative
+
+                                                           25
+
+===== PDF PAGE 26 =====
+
+                                               Sona Technical Report
+
+
+     retrieval.AdvancesinNeuralInformationProcessingSystems, 2023. URL                        https://arxiv.org/abs/
+     2305.05065.
+[23]Noam Shazeer. Glu variants improve transformer.arXivpreprintarXiv:2002.05202, 2020.
+[24]  Janne Spijkervet and John Ashley Burgoyne. Contrastive learning of musical representations.arXiv
+     preprintarXiv:2103.09410, 2021. URLhttps://arxiv.org/abs/2103.09410.
+[25]  Nisan Stiennon,Long Ouyang, Jeffrey Wu,Daniel M. Ziegler, RyanLowe, Chelsea Voss, AlecRadford,
+     Dario Amodei, and Paul Christiano. Learning to summarize from humanfeedback.AdvancesinNeural
+     InformationProcessingSystems, 2020. URLhttps://arxiv.org/abs/2009.01325.
+[26]  JianlinSu,YuLu,ShengfengPan,AhmedMurtadha,Bo Wen,andYunfeng Liu. Roformer: Enhanced
+     transformer with rotary position embedding.arXivpreprintarXiv:2104.09864, 2021.
+[27]  Yijia Sun, Shanshan Huang, Zhiyuan Guan, Qiang Luo, Ruiming Tang, Kun Gai, and Guorui Zhou.
+     Grank: Towardstarget-awareandstreamlinedindustrialretrievalwithagenerate-rankframework. In
+     ProceedingsoftheACMWebConference2026(WWW’26), 2026. URL      https://arxiv.org/abs/2510.
+     15299.
+[28]  DariaTikhonovich,OlegSorokin,VladislavDodonov,MariiaUlianova, andIlyaMurzin. Gryphon: A
+     unifiedarchitecturefor semantic-idgenerationanditem-levelscoringin industrialrecommendations.
+     arXivpreprintarXiv:2606.08604, 2026.
+[29]  Philippe Tillet, H. T. Kung, and David Cox. Triton: An intermediate language and compiler for tiled
+     neuralnetworkcomputations. InProceedingsofthe3rdACMSIGPLANInternationalWorkshoponMachine
+     Learning and Programming Languages (MAPL), 2019.  URL            https://doi.org/10.1145/3315508.
+     3329973.
+[30]  ChunqiWang,BingchaoWu,ZhengChen,LeiShen,BingWang,andXiaoyiZeng. Scalingtransformers
+     for discriminative recommendation via generative pretraining.arXivpreprintarXiv:2506.03699, 2025.
+     URLhttps://arxiv.org/abs/2506.03699.
+[31]  Shen Wang et al. Onelive: Dynamically unified generative framework for live-streaming recommenda-
+     tion.arXivpreprintarXiv:2602.08612, 2026.
+[32]  Wenjie Wang, Honghui Bao, Xinyu Lin, Jizhi Zhang, Yongqi Li, Fuli Feng, See-Kiong Ng, and Tat-Seng
+     Chua. Learnable item tokenization for generative recommendation. InProceedings of the 33rd ACM
+     InternationalConferenceonInformationandKnowledgeManagement,2024. URL                  https://arxiv.org/
+     abs/2405.07314.
+[33]  Zhipeng Wei et al. Oneloc: Geo-aware generative recommender systems for local life service.arXiv
+     preprintarXiv:2508.14646, 2025.
+[34]  Lee Xiong, Zhirong Chen, Rahul Mayuranath, Shangran Qiu, Arda Ozdemir, et al. Llatte: Scaling laws
+     formulti-stagesequencemodelinginlarge-scaleadsrecommendation.arXivpreprintarXiv:2601.20083,
+     2026. URLhttps://arxiv.org/abs/2601.20083.
+[35]  Ruibin Xiong, Yunchang Yang, Di He, Kai Zheng, Shuxin Zheng, Chen Xing, Huishuai Zhang, Yanyan
+     Lan,LiweiWang,andTie-YanLiu. Onlayernormalizationinthetransformerarchitecture. InProceedings
+     of the 37th International Conference on Machine Learning, 2020.  URL             https://proceedings.mlr.
+     press/v119/xiong20b.html.
+[36]  Ruibin Xiong, Yunchang Yang, Di He, Kai Zheng, Shuxin Zheng, Chen Xing, Huishuai Zhang, Yanyan
+     Lan,LiweiWang,andTieyanLiu.Onlayernormalizationinthetransformerarchitecture.InInternational
+     conferenceonmachinelearning, pages 10524–10533. PMLR, 2020.
+[37]  Zihao Ye, Lequn Chen, Ruihang Lai, Wuwei Lin, Yineng Zhang, Stephanie Wang, Tianqi Chen,
+     Baris Kasikci,  Vinod Grover,  Arvind Krishnamurthy,  and Luis Ceze.    Flashinfer:  Efficient and
+     customizable attention engine for LLM inference serving.   InProceedings of Machine Learning and
+     Systems,  2025.    URL            https://proceedings.mlsys.org/paper_files/paper/2025/file/
+     dbf02b21d77409a2db30e56866a8ab3a-Paper-Conference.pdf.
+[38]  Xinyang Yi, Ji Yang, Lichan Hong, Derek Zhiyuan Cheng, Lukasz Heldt, Aditee Kumthekar, Zhe Zhao,
+     Li Wei, and Ed Chi. Sampling-bias-corrected neural modeling for large corpus item recommendations.
+     InRecSys, 2019.
+[39]  Jiaqi Zhai et al.   Actions speak louder than words:  Trillion-parameter sequential transducers for
+     generative recommendations.arXivpreprintarXiv:2402.17152, 2024.
+
+
+                                                           26
+
+===== PDF PAGE 27 =====
+
+                                                  Sona Technical Report
+
+
+[40]  BiaoZhangandRicoSennrich. Rootmeansquarelayernormalization. InAdvancesinNeuralInformation
+      ProcessingSystems, 2019. URLhttps://arxiv.org/abs/1910.07467.
+[41]  Jun Zhang, Yi Li, Yue Liu, et al.  Gpr:  Towards a generative pre-trained one-model paradigm for
+      large-scale advertising recommendation.arXivpreprintarXiv:2511.10138,2025. URL                                                 https://arxiv.
+      org/abs/2511.10138.
+[42]  KunZhangetal. Onemall: Onearchitecture,morescenarios—end-to-endgenerativerecommender
+      family at kuaishou e-commerce.arXivpreprintarXiv:2601.21770, 2026.
+[43]  Wei Zhang, Dai Li, Chen Liang, Fang Zhou, Zhongke Zhang, Xuewei Wang, Ru Li, Yi Zhou, Yaning
+      Huang, Dong Liang, et al.  Scaling user modeling: Large-scale online user representations for ads
+      personalization inmeta. InCompanionProceedingsoftheACMWebConference(WWW’24Companion),
+      2024. URLhttps://arxiv.org/abs/2311.09544.
+[44]  YanliZhao,AndrewGu,RohanVarma,LiangLuo,Chien-ChinHuang,MinXu,LessWright,Hamid
+      Shojanazeri, Myle Ott, Sam Shleifer, et al.  Pytorch fsdp: Experiences on scaling fully sharded data
+      parallel.arXivpreprintarXiv:2304.11277, 2023.
+[45]  Carolina Zheng, Minhui Huang, Dmitrii Pedchenko, Kaushik Rangadurai, Siyu Wang, Fan Xia, Gaby
+      Nahum, Jie Lei, Yang Yang, Tao Liu, et al. Enhancing embedding representation stability in recom-
+      mendationsystemswithsemanticid. InProceedingsoftheNineteenthACMConferenceonRecommender
+      Systems, pages 954–957, 2025.
+[46]  Zuowu Zheng et al. Ega-v2: An end-to-end generative framework for industrial advertising.arXiv
+      preprintarXiv:2505.17549, 2025.
+
+A   Contributions and Acknowledgments
+
+Contributors are listed alphabetically by first name. * marks contributors who have since departed from the
+team.
+
+Contributors.Alexandr Udeneev, Aleksei Krasilnikov                                   *, Alexey Nadtochiy, Andrey Semenov, Andrey
+Tsyrkunov, Anna Krivonos, Anna Lipkina, Artem Matveev*, Daniil Burlakov, Daniil Leshchev*, Daria
+Tikhonovich, Denis Burshtein,Ekaterina Dmitrieva, EugeneKrofto, Grigorii Khlystov*, IlyaMurzin, Kirill
+Golovko, Ksenia Sycheva, Leonid Dmitriev, Mariia Rozaeva, Mariia Ulianova, Mikhail Sandul, Nikolai
+Savushkin, Oleg Sorokin, Roman Odobesku, Semyon Panenko, Sergei Liamaev*, Sergei Makeev*, Vadim
+Shilov, Veronika Ivanova, Viktor Yanush, Vladimir Baikalov*, Vladislav Dodonov, Vladislav Tytskiy*.
+
+Acknowledgments.We would like to extend special thanks to Alexander Ploshkin, Alexey Gusakov,
+Alexey Pismenny, Nikita Stepanov, Petr Ermakov, Petr Garmider, and Sergey Kastryulin for their substantial
+support throughout this work.
+
+B   Hyperparameters and Model Cards
+
+B.1   Semantic Tokenizer
+
+
+           Parameter                                                  Value
+           Audio foundation model                        Qwen2.5-Omni [21]
+           Audio input length                                  90 s mel-spectrogram
+           Embedding refresh threshold                 500 lifetime plays
+           Qwen output sequence length               up to 640 hidden vectors
+           Refinement transformer                          4 layers, 4 heads, model dim 512
+           Item embedding dimension                   256
+           Refinement contrastive temperature     0.1
+           Refinement alignment weight                0.1
+           Semantic ID codebooks                           3 levels, 32,000 codes per level
+
+                                              Table B.1.Tokenizer model card.
+
+
+
+                                                               27
+
+===== PDF PAGE 28 =====
+
+                                                               Sona Technical Report
+
+
+B.2   Teacher Ranker
+
+
+              Parameter                                 Value
+              Encoder layers                          10 (causal)
+              Candidate-scorer layers          6
+              Hidden dimension                  1024
+              Attention heads                        16 (head dim 64)
+              Hash embedding tables2           19×256(item / artist),2                       19×512(semantic prefix)
+              Per-level SID embeddings32001×128
+              Maximum positions                8193
+              Dropout                                     0.1 (encoder); 0 (candidate scorer)
+              Total parameters                      0.6B (embedding-table dominated)
+              Pre-training history length     2k events
+              Fine-tuning history length     8k events
+              NIP in-batch negatives2                   13 = 8192
+              LR schedule             10             −5  →10   −4   over 3000 warmup steps, then constant (both groups)
+              Gradient clipping                    1.0
+
+ Table B.2.Teacher Ranker card.  Initial training has two stages (Section5.3); only the encoder is reused between
+ pre-training and multi-head ranking fine-tuning. The resulting model is then refreshed continuously.
+
+
+B.3   Ranking Module
+
+
+              Parameter                              Value
+              Blocks                                     4 cross-attention layers
+              Hidden dimension               1024
+              Attention heads                    4 (head dim 256)
+              Feed-forward dimension     4096
+              Scoring outputs                     2 teacher-head scores
+              Rollouts per prompt             32
+              Loss weights                          NTP : rollout : impression= 1 : 1 : 1
+
+ Table B.3.Ranking Module card. Distilled from the Teacher Rankerjointly with encoder–decoder backbone training
+ (Section4.2).
+
+
+B.4   Encoder–Decoder Backbone
+
+              Parameter                                        Value
+              Layer allocation                              7 recent-block layers; 1 full-history layer; 1 bridge per direction
+              Hidden dimension                         1024
+              Attention heads                              16 (head dim 64)
+              Feed-forward dimension              2816
+              History lengths                               8192 events total; 2048 recent (+1CLS)
+              Hash-bucket embedding table2         19×256(shared)
+
+                                                           Table B.4.Encoder model card.
+
+
+
+              Parameter                             Value
+              Layers                                   2 (causal self-attention + cross-attention over encoder states)
+              Semantic ID vocabulary     3 codebooks×32,000 (+BOSrow)
+              Output heads                       3×Linear(1024→32000), untied
+              Serving decoding                constrained beam search, beam 1024
+
+                                                           Table B.5.Decoder model card.
+
+
+                                                                               28
+
+===== PDF PAGE 29 =====
+
+                                                              Sona Technical Report
+
+
+
+              Parameter                                     Value
+              Optimizer                                     AdamW (fused), weight decay0.1, gradient clipping1.0
+              LR schedule (initial training)     linear,10−5  →3×10        −4  →7×10        −5  , 3000-step warmup
+              Effective batch size             16,384samples
+
+                                            Table B.6.Encoder–decoder backbone optimization.
+
+
+B.5   Online Training and Model Refresh
+
+
+              Configuration                                      Value
+              Online update mode                           continuous  optimization  over  the  event-ordered  request
+                                                               stream
+              LR schedule                                          constant7×10    −5  ,theterminalrateoftheinitial-trainingsched-
+                                                               ule
+              Training objective                                next-token prediction and Ranking Module distillation
+              Session-attribution window               15 minutes
+              Serving-model sync cadence             every 10 minutes
+              Teacher snapshot refresh cadence     every 24 hours
+
+                               Table B.7.Online-training and model-refresh configuration (Section6.2).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                              29
+
+===== PDF PAGE 30 =====
+
+                                                                   Sona Technical Report
+
+
+C   Notation
+
+
+  Symbol                              Definition
+  Userhistoryandencoder
+  u= (e    1,...,eT)              chronological user engagement history;e               t is one logged event
+  T,T   max                               history length and its cap
+  X                                      embedded event sequence, the encoder input (Section3.2)
+  H= Enc   θ(X)                  direct hidden-state output of a full encoder,H∈R               (T+1)×d
+  d                                        hidden dimension
+  θ                                         learnable model parameters
+  Semantictokenizer
+  v                                        catalog track
+  s(v) = (s        1,...,sL)          Semantic ID tuple of trackv;s             ℓ is the level-ℓcode,Lthe number of levels
+  za,¯ha                                  item embedding of trackaand the mean of its content features
+  m                                     collaborative pairs per training batch
+  sim,τ                                 cosine similarity and InfoNCE temperature
+  λalign                                   weight of the alignment loss term
+  NPMI(i,j)                                       normalized pointwise mutual information of co-listening tracks i and j; p(i,j)     , p(i)      are
+                                       co-occurrence and marginal probabilities
+  HistoryCompression
+  N                                      maximum attended history length
+  O,R                                 long-term and recent blocks ofn            o =N−n          r andn       r events
+   ˜O,    ˜R                                 blocks enriched by bidirectional cross-attention
+  XO,X R                              block representations after the full-history pass
+  HR                                       deep-stack encoding of the recent blockX         R
+  K                                         shared encoder memory exposed to the decoder and Ranking Module;K=H        for a full
+                                       encoder andK= [X           O;H R]with History Compression
+  Training
+  C+(u)                               packed positive target set of the next-token objective
+  B                                      rollout beam size
+  B,I                                   rollout candidate set and logged impressions of a request, the two distillation sources
+  rhc,ˆr   hc                                   teacher and Ranking Module head-h scores of candidate c; n is the number of distilled
+                                       heads
+  LNTP,L rollout,L impression     next-token loss and the two distillation losses of the joint objective (Section4.2)
+  TeacherRanker
+  P                                       ordered pairs of temporally adjacent impressions with different engagement grades
+  scorepair(i)                       pairwise-head score of impressioni
+  Lpair,L kBCE,L teacher           pairwise loss, per-head pointwise losses, and their sum (Section5.3)
+  Evaluation
+  k                                        ranking cutoff
+  Topk(·)                              top-kitem set under a scoring function
+  r,R                                 evaluated request/history and the set of such requests
+  Cr                                        decoder-generated candidate pool for requestr
+  s(r)RM,s (r)teacher                       Ranking Module and teacher scores overC        r
+  ti                                          predefined target weight of impressioni’s engagement label
+
+                                                   Table C.1.Notation used throughout the report.
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                     30
