@@ -1,0 +1,1481 @@
+
+===== PAGE 1 =====
+OneRec: Unifying Retrieve and Rank with Generative
+Recommender and Preference Alignment
+Jiaxin Deng∗
+KuaiShou Inc.
+Beijing, China
+dengjiaxin03@kuaishou.com
+Shiyao Wang∗
+KuaiShou Inc.
+Beijing, China
+wangshiyao08@kuaishou.com
+Kuo Cai∗
+KuaiShou Inc.
+Beijing, China
+caikuo@kuaishou.com
+Lejian Ren∗
+KuaiShou Inc.
+Beijing, China
+renlejian@kuaishou.com
+Qigen Hu∗
+KuaiShou Inc.
+Beijing, China
+huqigen03@kuaishou.com
+Weifeng Ding∗
+KuaiShou Inc.
+Beijing, China
+dingweifeng@kuaishou.com
+Qiang Luo∗
+KuaiShou Inc.
+Beijing, China
+luoqiang@kuaishou.com
+Guorui Zhou∗†
+KuaiShou Inc.
+Beijing, China
+zhouguorui@kuaishou.com
+Abstract
+Recently, generative retrieval-based recommendation systems (GRs)
+have emerged as a promising paradigm by directly generating can-
+didate videos in an autoregressive manner. However, most modern
+recommender systems adopt a retrieve-and-rank strategy, where
+the generative model functions only as a selector during the re-
+trieval stage. In this paper, we propose OneRec, which replaces
+the cascaded learning framework with a unified generative model.
+To the best of our knowledge, this is the first end-to-end generative
+model that significantly surpasses current complex and well-designed
+recommender systems in real-world scenarios. Specifically, OneRec
+includes: 1) an encoder-decoder structure, which encodes the
+user’s historical behavior sequences and gradually decodes the
+videos that the user may be interested in. We adopt sparse Mixture-
+of-Experts (MoE) to scale model capacity without proportionally
+increasing computational FLOPs. 2) a session-wise generation ap-
+proach. In contrast to traditional next-item prediction, we propose
+a session-wise generation, which is more elegant and contextually
+coherent than point-by-point generation that relies on hand-crafted
+rules to properly combine the generated results. 3) an Iterative
+Preference Alignment module combined with Direct Preference
+Optimization (DPO) to enhance the quality of the generated results.
+Unlike DPO in NLP, a recommendation system typically has only
+one opportunity to display results for each user’s browsing request,
+∗Equal contribution.
+†Corresponding author.
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.
+Conference acronym ’XX, Woodstock, NY
+© 2018 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 978-1-4503-XXXX-X/2018/06
+https://doi.org/XXXXXXX.XXXXXXX
+making it impossible to obtain positive and negative samples simul-
+taneously. To address this limitation, We design a reward model
+to simulate user generation and customize the sampling strategy
+according to the attributes of the recommendation system’s online
+learning. Extensive experiments have demonstrated that a limited
+number of DPO samples can align user interest preferences and
+significantly improve the quality of generated results. We deployed
+OneRec in the main scene of Kuaishou, a short video recommen-
+dation platform with hundreds of millions of daily active users,
+achieving a 1.6% increase in watch-time, which is a substantial
+improvement.
+CCS Concepts
+• Information systems →Computational advertising; Multi-
+media information systems.
+Keywords
+Generative Recommendation, Autoregressive Generation, Semantic
+Tokenization, Direct Preference Optimization
+ACM Reference Format:
+Jiaxin Deng, Shiyao Wang, Kuo Cai, Lejian Ren, Qigen Hu, Weifeng Ding,
+Qiang Luo, and Guorui Zhou. 2018. OneRec: Unifying Retrieve and Rank
+with Generative Recommender and Preference Alignment. In Proceedings of
+Make sure to enter the correct conference title from your rights confirmation
+email (Conference acronym ’XX). ACM, New York, NY, USA, 10 pages. https:
+//doi.org/XXXXXXX.XXXXXXX
+1
+Introduction
+To balance efficiency and effectiveness, most modern recommender
+systems adopt a cascade ranking strategy[6, 26, 34, 43]. As illus-
+trated in Figure 1(b), a typical cascade ranking system employs a
+three-stage pipeline: recall [6, 19, 54], pre-ranking [28, 46], and rank-
+ing [2, 3, 15, 16, 33, 52, 53]. Each stage is responsible for selecting
+the top-𝑘items from the received items and passing the results to
+the next stage, collectively balancing the trade-off between system
+response time and sorting accuracy.
+arXiv:2502.18965v1  [cs.IR]  26 Feb 2025
+
+===== PAGE 2 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Deng et al.
+Video
+Corpus
+~1010
+Retrieval
+Coarse-grained
+Corpus
+Hundreds of 
+Thousands
+~105
+Coarse-
+grained
+Ranking
+Thousands
+~103
+fine-grained
+ranking
+Dozens
+Dozens
+Encoder
+Decoder
+(a) Unified Architecture
+(b) Cascade Architecture
+End-to-End
+Generation
+Recommended Videos
+Recommended Videos
+~102
+Figure 1: (a) Our proposed unified architecture for end-to-
+end generation. (b) A typical cascade ranking system, which
+includes three stages from the bottom to the top: Retrieval,
+Pre-ranking, and Ranking.
+Although efficient in practice, existing methods typically treat
+each ranker independently, where the effectiveness of each isolated
+stage serves as the upper bound for the subsequent ranking stage,
+thereby limiting the performance of the overall ranking system.
+Despite various efforts [11, 13, 18, 20, 34, 44] to improve overall rec-
+ommendation performance by enabling interaction among rankers,
+they still maintain the traditional cascade ranking paradigm. Re-
+cently, generative retrieval-based recommendation systems (GRs)
+[36, 45, 51] have emerged as a promising paradigm by directly
+generating the identifier of a candidate item in an autoregressive
+sequence generation manner. By indexing items with quantized
+semantic IDs that encode item semantics [24], recommenders can
+leverage the abundant semantic information within the items. The
+generative nature of GRs makes them suitable for directly select-
+ing candidate items through beam search decoding and producing
+more diverse recommendation results. However, current gener-
+ative models only act as selectors in the retrieval stage, as their
+recommendation accuracy does not yet match that of well-designed
+multiple cascade rankers.
+To address the above challenges, we propose a unified end-to-
+end generative framework for single-stage recommendation named
+OneRec. First, we present an encoder-decoder architecture. Taking
+inspiration from the scaling laws observed in training large lan-
+guage models, we find that scaling the capacity of recommendation
+models also consistently improves the performance. So we scale
+up the model parameters based on the structure of MoE [7, 9, 55],
+which significantly improves the model’s ability to characterize user
+interests. Second, unlike the traditional point-by-point prediction of
+the next item, we propose a session-wise list generation approach
+that considers the relative content and order of the items within
+each session. The point-by-point generation method necessitates
+hand-craft strategies to ensure coherence and diversity in the gener-
+ated results. In contrast, the session-wise learning process enables
+the model to autonomously learn the optimal session structure by
+feeding it preferred data. Last but not least, we explore preference
+learning by using direct preference optimization (DPO) [35] to fur-
+ther enhance the quality of the generated results. For constructing
+preference pairs, we take inspiration from hard negative sampling
+[37] by creating self-hard rejected samples from the beam search
+results rather than random sampling. We propose an Iterative Pref-
+erence Alignment (IPA) strategy to rank the sampled responses
+based on scores provided by the pre-trained reward model (RM),
+identifying the best-chosen and worst-rejected samples. Our exper-
+iments on large-scale industry datasets show the superiority of the
+proposed method. We also conduct a series of ablation experiments
+to demonstrate the effectiveness of each module in detail. The main
+contributions of this work are summarized as follows:
+• To overcome the limitations of cascade ranking, we introduce
+OneRec, a single-stage generative recommendation framework.
+To the best of our knowledge, this is one of the first industrial
+solutions capable of handling item recommendations with a uni-
+fied generation model, significantly surpassing the traditional
+multi-stage ranking pipeline.
+• We highlight the necessity of model capacity and contextual
+information of target items through a session-wise generation
+manner, which enables more accurate predictions and enhances
+the diversity of generated items.
+• We propose a novel self-hard negative samples selection strategy
+based on personalized reward model. With direct preference op-
+timization, we enhance OneRec’s generalization across a broader
+range of user preference. Extensive offline experiments and on-
+line A/B testing demonstrates their effectiveness and efficiency.
+2
+Related Work
+2.1
+Generative Recommendation
+In recent years, with the remarkable progress in generative models,
+generative recommendation has received increasing attention. Un-
+like traditional embedding-based retrieval methods which largely
+rely on a two-tower model for calculating the ranking score for each
+candidate item and utilize an effecient MIPS or ANN [14, 17, 21, 31,
+38] search system for retrieving top-𝑘relevant items. Generative
+Retrieval (GR) [41] method formulates the problem of retrieving
+relevant documents from the database as a sequence generation
+task which generate the relevant document tokens sequentially.
+The document tokens can be the document titles, document IDs
+or pre-trained semantic IDs [42]. GENRE [8] first adopts the trans-
+former architecture for entity retrieval, generating entity names in
+an autoregressive fashion based on the conditioned context. DSI
+[42] first proposes the concept of assigning structured semantic
+IDs to documents and training encoder-decoder models for gen-
+erative document retrieval. Following this paradigm, TIGER [36]
+introduces the formulation of generative item retrieval models for
+recommender systems.
+In addition to the generation framework, how to index items has
+also attracted increasing attention. Recent research focuses on the
+semantic indexing technique [12, 36, 42], which aims to index items
+based on content information. Specifically, TIGER [36] and LC-Rec
+[51] apply residual quantization (RQ-VAE) to textual embeddings
+derived from item titles and descriptions for tokenization. Recforest
+[12] utilizes hierarchical k-means clustering on item textual em-
+beddings to obtain cluster indexes as tokens. Furthermore, recent
+studies such as EAGER [45] explore integrating both semantic and
+collaborative information into the tokenization process.
+2.2
+Preference Alignment of Language Models
+During the post-training [10] phase of Large Language Models
+(LLMs), Reinforcement Learning from Human Feedback (RLHF)
+[32, 39] is a prevalent method in aligning LLMs with human values
+by employing reinforcement learning techniques guided by reward
+models that represent human feedback. However, RLHF suffers from
+
+===== PAGE 3 =====
+OneRec: Unifying Retrieve and Rank with Generative Recommender and Preference Alignment
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Fully Visible Self-Attention
+Feed Forward
+Add & RMS Norm
+×N/2
+OneRec Encoder
+Casual Self-Attention
+Add & RMS Norm
+×N/2
+OneRec Decoder
+BOS
+BOS
+Fully Visible Cross-Attention
+M
+key/value
+<a_9>
+<b_7>
+<c_1>
+<a_4>
+<b_5>
+<c_4>
+<a_4>
+<b_5>
+<c_4>
+𝓛NTP
+(a) The Architecture of OneRec
+(b) Iterative Preference Alignment
+Training
+Data
+Beam Search
+<a_9><b_1><c_5>
+<a_9><b_1><c_1>
+<a_9><b_1><c_3>
+<a_9><b_1><c_7>
+Reward
+Model
+𝑟1
+𝑟2
+𝑟3
+…
+𝑟𝑁
+Select
+<a_9><b_1><c_5>
+<a_9><b_1><c_1>
+<a_9><b_1><c_3>
+<a_9><b_1><c_7>
+chosen
+rejected
+OneRec𝑡+1
+DPO Training
+OneRect
+Iterative Training with Self Improvement
+𝓛DPO
+SEP
+SEP
+<a_6>
+<b_1>
+<c_5>
+<a_2>
+<b_1>
+<c_7>
+SEP
+SEP
+<a_6>
+<b_1>
+<c_5>
+<a_2>
+<b_1>
+<c_7>
+Router
+Expert NMoE
+⋯
+⊗
+⊕
+⊗
+𝓗𝑢
+𝑺
+𝑯
+Expert 4
+Expert 3
+Expert 2
+Expert 1
+MoE Layer
+⋯
+⋯
+<a_9>
+<b_7>
+<c_1>
+M
+⋯
+User Behavior Sequences 
+High-value Sessions
+⋯
+Figure 2: The overall framework of OneRec, consists of two stages: (i) the session training stage which train OneRec with
+session-wise data; (ii) the IPA stage which utilizes iterative direct preference optimization with self-hard negatives.
+instability and inefficiency. Direct Preference Optimization (DPO)
+[35] is proposed which derives the optimal policy in closed form
+and enables direct optimization using preference data. Apart from
+that, several variants have been proposed to further improve the
+original DPO. For example, IPO [1] bypasses two approximations in
+DPO with a general objective. cDPO [35] alleviates the influence of
+noisy labels by introducing a hyperparameter 𝜖. rDPO [5] designs
+an unbiased estimate of the original Binary Cross Entropy loss.
+Other variants including CPO [47], simDPO [5], also enhance or
+expand DPO in various aspects. However, unlike traditional NLP
+scenarios where preference data is explicitly annotated through
+humans, preference learning in recommendation systems faces a
+unique challenge because of the sparsity of user-item interaction
+data. This challenge results in adapting DPO for recommendation
+are still largely unexplored. Different from S-DPO which focuses
+on incorporating multiple negatives in user preference data for
+LM-based recommenders, we train a reward model and based on
+the scores from reward model we choose personalized preference
+data for different users.
+3
+Methods
+In this section, we propose OneRec, an end-to-end framework that
+generates target items through a single-stage retrieval manner.
+In Section 3.1, we first introduce the feature engineering for the
+single-stage generative recommendation pipeline in industrial ap-
+plications. Then, in Section 3.2, we formally define the session-
+wise generative tasks and present the architecture of our proposed
+OneRec model. Finally, we elaborate on the model’s capability with
+a personalized reward model for self-hard negative sampling in
+Section 3.3, and demonstrate how we iteratively improve model
+performance through direct preference optimization. The overall
+framework of OneRec is illustrated in Figure 2.
+3.1
+Preliminary
+In this section, we introduce the construction of the single-stage
+generative recommendation pipeline from the perspectives of fea-
+ture engineering. For user-side feature, OneRec takes the posi-
+tive historical behavior sequences H𝑢= {𝒗ℎ
+1, 𝒗ℎ
+2, . . . , 𝒗ℎ𝑛} as input,
+where 𝒗represent the videos that the user has effectively watched
+or interacted with (likes, follows, shares), and 𝑛is the length of
+behaviour sequence. The output of OneRec is a list of videos, con-
+sisting of a session S = {𝒗1, 𝒗2, ..., 𝒗𝑚}, where 𝑚is the number of
+videos within a session (the detailed definition of “session” can be
+found in Section 3.2).
+For each video 𝒗𝑖, we describe them with multi-modal embed-
+dings e𝑖∈R𝑑which are aligned with the real user-item behaviour
+distribution [27]. Based on the pretrain multi-modal representation,
+existing generative recommendation frameworks [25, 36] use RQ-
+VAE [49] to encode the embedding into semantic tokens. However,
+such method is suboptimal due to the unbalanced code distribu-
+tion which is known as the hourglass phenomenon [23]. We apply
+a multi-level balanced quantitative mechanism to transform the
+e𝑖with residual K-Means quantization algorithm[27]. At the first
+level (𝑙= 1), the initial residual is defined as 𝒓1
+𝑖= 𝒆𝑖. At each level
+
+===== PAGE 4 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Deng et al.
+Algorithm 1: Balanced K-means Clustering
+Input: Item set V, number of clusters 𝐾
+1 Compute 𝑤←|V|/𝐾
+2 Initialize centroids C𝑙= {𝒄𝑙
+1, . . . , 𝒄𝑙
+𝐾} with random selection;
+3 repeat
+4
+Initialize unassigned set U ←V
+5
+for each cluster 𝑘∈{1, . . . , 𝐾} do
+6
+Sort U by ascending distance from centroid 𝒄𝑙
+𝑘;
+7
+Assign V𝑘←U[0 : 𝑤−1];
+8
+Update centroid 𝒄𝑙
+𝑘←1
+𝑤
+Í
+𝒓𝑙∈V𝑘𝒓𝑙;
+9
+Remove assigned items U ←U \ V𝑘;
+10
+end
+11 until Assignment convergence;
+Output: Optimized codebook C𝑙= {𝒄𝑙
+1, . . . , 𝒄𝑙
+𝐾}
+𝑙, we have a codebook C𝑙= {𝒄𝑙
+1, ..., 𝒄𝑙
+𝐾}, where 𝐾is the codebook
+size. The index of the closest centroid node embedding is generate
+through 𝒔𝑙
+𝑖= arg min𝑘∥r𝑙
+𝑖−𝒄𝑙
+𝑘∥2
+2 and for next level 𝑙+1 the residual
+is defined as 𝒓𝑙+1
+𝑖
+= 𝒓𝑙
+𝑖−𝒄𝑙
+𝒔𝑙
+𝑖
+. So the corresponding codebook tokens
+are generated through hierarchical indexing:
+𝒔1
+𝑖= arg min
+𝑘
+∥𝒓1
+𝑖−𝒄1
+𝑘∥2
+2,
+𝒓2
+𝑖= 𝒓1
+𝑖−𝒄1
+𝒔1
+𝑖
+𝒔2
+𝑖= arg min
+𝑘
+∥𝒓2
+𝑖−𝒄2
+𝑘∥2
+2,
+𝒓3
+𝑖= 𝒓2
+𝑖−𝒄2
+𝒔2
+𝑖
+...
+𝒔𝐿
+𝑖= arg min
+𝑘
+∥𝒓𝐿
+𝑖−𝒄𝐿
+𝑘∥2
+2
+where 𝐿is the total layers of sematic ID.
+To construct a balanced codebook C𝑙= {𝒄𝑙
+1, . . . , 𝒄𝑙
+𝐾}, we apply
+the Balanced K-means as detailed in Algorithm 1 for itemset par-
+titioning. Given the total video set V, this algorithm partitions the
+set into 𝐾clusters, where each cluster contains exactly 𝑤= |V|/𝐾
+videos. During iterative computation, each centroid is sequentially
+assigned its 𝑤nearest unallocated videos based on Euclidean dis-
+tance, followed by centroid recalibration using mean vectors of
+assigned videos. The termination criterion is satisfied when cluster
+assignments reach convergence.
+3.2
+Session-wise List Generation
+Different from traditional point-wise recommendation methods
+that only predict the next video, session-wise generation aims to
+generate a list of high-value sessions based on users’ historical
+interaction sequences, which enables the recommendation model
+to capture the dependencies between videos in the recommended
+list. Specifically, a session refers to a batch of short videos returned
+in response to a user’s request, typically consisting of 5 to 10 videos.
+The videos within a session generally take into account factors such
+as user interest, coherence, and diversity. We have devised several
+criteria to identify high-quality sessions, including:
+• The number of short videos actually watched by the user within
+a session is greater than or equal to 5;
+• The total duration for which the user watches the session exceeds
+a certain threshold;
+• The user exhibits interaction behaviors, such as liking, collecting,
+or sharing the videos;
+This approach ensures that our session-wise model learns from
+real user engagement patterns and captures more accurate con-
+textual information within the session list. So the objective of our
+session-wise model M can be formalized as:
+S := M(H𝑢)
+(1)
+where H𝑢is represented from the remantic IDs: H𝑢= {(𝒔1
+1, 𝒔2
+1, · · · ,
+𝒔𝐿
+1 ), (𝒔1
+2, 𝒔2
+2, · · · , 𝒔𝐿
+2 ), · · · , (𝒔1𝑛, 𝒔2𝑛, · · · , 𝒔𝐿𝑛)} and S = {(𝒔1
+1, 𝒔2
+1, · · · , 𝒔𝐿
+1 ),
+(𝒔1
+2, 𝒔2
+2, · · · , 𝒔𝐿
+2 ), · · · , (𝒔1𝑚, 𝒔2𝑚, · · · , 𝒔𝐿𝑚)}.
+As shown in Figure 2 (a), consistent with the T5 [48] architecture,
+our model employs a transformer-based framework consisting of
+two main components: an encoder for modeling user historical
+interactions and a decoder for session list generation. Specifically,
+the encoder leverages the stacked multi-head self-attention and
+feed-forward layers to process the input sequence H𝑢. We denote
+the encoded historical interaction features as H = 𝐸𝑛𝑐𝑜𝑑𝑒𝑟(H𝑢).
+The decoder takes the semantic IDs of the target session as input
+and generates the target in an auto-regressive manner. To train a
+larger model at reasonable economic costs, for the feed-forward
+neural networks (FNNs) in the decoder, we adopt the MoE archi-
+tecture [7, 9, 55] commonly used in Transformer-based language
+models and substitute the 𝑙-th FFN with:
+H𝑙+1
+𝑡
+=
+𝑁MoE
+∑︁
+𝑖=1
+
+𝑔𝑖,𝑡FFN𝑖
+
+H𝑙
+𝑡
+
++ H𝑙
+𝑡,
+𝑔𝑖,𝑡=
+(
+𝑠𝑖,𝑡,
+𝑠𝑖,𝑡∈Topk({𝑠𝑗,𝑡|1 ≤𝑗≤𝑁}, 𝐾MoE),
+0,
+otherwise,
+𝑠𝑖,𝑡= Softmax𝑖
+
+H𝑙
+𝑡
+𝑇e𝑙
+𝑖
+
+,
+(2)
+where 𝑁MoE represents the total number of experts, FFN𝑖(·) is the 𝑖-
+th expert FFN, and𝑔𝑖,𝑡denotes the gate value for the𝑖-th expert. The
+gate value 𝑔𝑖,𝑡is sparse, meaning that only 𝐾MoE out of 𝑁MoE gate
+values are non-zero. This sparsity property ensures computational
+efficiency within an MoE layer and each token will be assigned to
+and computed in only 𝐾MoE experts.
+For training, we add a start token 𝒔[BOS] at the beginning of
+codes to construct the decoder inputs with:
+¯S = {𝒔[BOS], 𝒔1
+1, 𝒔2
+1, · · · , 𝒔𝐿
+1, 𝒔[BOS], 𝒔1
+2, 𝒔2
+2, · · · , 𝒔𝐿
+2,
+· · · , 𝒔[BOS], 𝒔1
+𝑚, 𝒔2
+𝑚, · · · , 𝒔𝐿
+𝑚}
+(3)
+We utilize cross-entropy loss for next-token prediction on the
+sematic IDs of the target session. The NTP loss LNTP is formulated
+as:
+LNTP = −
+𝑚
+∑︁
+𝑖=1
+𝐿
+∑︁
+𝑗=1
+log 𝑃(𝒔𝑗+1
+𝑖
+| [𝒔[BOS], 𝒔1
+1, 𝒔2
+1, · · · , 𝒔𝐿
+1, · · · ,
+𝒔[BOS], 𝒔1
+𝑖, · · · , 𝒔𝑗
+𝑖]; Θ).
+(4)
+After a certain amount of training on session-wise list generation
+task, we obtain the seed model M𝑡.
+
+===== PAGE 5 =====
+OneRec: Unifying Retrieve and Rank with Generative Recommender and Preference Alignment
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Algorithm 2: Iterative Preference Alignment (IPA)
+Input: Number of responses 𝑁, pretrained RM 𝑅(𝒖, S),
+seed model M𝑡, DPO ratio 𝑟DPO, total epochs 𝑇and
+samples per epoch 𝑁sample
+1 for epoch ←𝑡to 𝑇do
+2
+for sample ←1 to 𝑁sample do
+3
+if rand() < 𝑟DPO then
+4
+Generate 𝑁responses via M𝑡:
+5
+for 𝑖←1 to 𝑁do
+6
+S𝑖𝑢∼M𝑡(H𝑢);
+7
+𝑟𝑖𝑢←𝑅(𝒖, S𝑖𝑢);
+8
+end
+9
+Select the best and worst responses:
+10
+S𝑤
+𝑢←Sarg max𝑖𝑟𝑖
+𝑢
+𝑢
+;
+11
+S𝑙𝑢←Sarg min𝑖𝑟𝑖
+𝑢
+𝑢
+;
+12
+Compute NTP and DPO loss:
+13
+L ←LNTP + 𝜆LDPO;
+14
+else
+15
+Compute NTP loss:
+16
+L ←LNTP;
+17
+end
+18
+Update parameters:
+19
+Θ ←Θ −𝛼∇ΘL;
+20
+end
+21
+Update model snapshot: M𝑡+1 ←M𝑡;
+22 end
+Output: Optimized parameters Θ
+3.3
+Iterative Preference Alignment with RM
+The high-quality sessions defined in Section 3.2 provide valuable
+training data, enabling the model to learn what constitutes a good
+session, thereby ensuring the quality of generated videos. Building
+on this foundation, we aim to further enhance the model’s ability
+by Direct Preference Optimization (DPO). In traditional natural
+language processing (NLP) scenarios, preference data is explicitly
+annotated by humans. However, preference learning in recommen-
+dation systems confronts a unique challenge due to the sparsity
+of user-item interaction data, which necessitates a reward model
+(RM). So we introduce a session-wise reward model in Section 3.3.1.
+Moreover, we improve the conventional DPO by proposing an it-
+erative direct preference optimization that enables the model to
+self-improvement described in Section 3.3.2.
+3.3.1
+Reward Model Training. We use 𝑅(𝒖, S) to denote the re-
+ward model which selects preference data for different users. Here,
+the output 𝑟represents the reward corresponding to user 𝑢’s (usu-
+ally represented by user behavior) preference on the session S =
+{𝒗1, 𝒗2, . . . , 𝒗𝑚}. In order to equip the RM with the capacity to rank
+session, we first extract the target-aware representation 𝒆𝑖= 𝒗𝑖⊙𝒖
+of each item 𝒗𝑖in S, where ⊙represents the target-aware oper-
+ation (such as target attention toward user behavior). So we get
+the target-aware representation 𝒉= {𝒆1, 𝒆2, · · · , 𝒆𝑚} for session S.
+Then the items within a session interact with each other through
+self-attention layers to fuse the necessary information among dif-
+ferent items:
+𝒉𝑓= SelfAttention(𝒉𝑾𝑄
+𝑠, 𝒉𝑾𝐾
+𝑠, 𝒉𝑾𝑉
+𝑠)
+(5)
+Next we utilize different tower to make predictions on multi-
+target reward and the RM is pre-trained with abundant recommen-
+dation data:
+ˆ𝑟𝑠𝑤𝑡= Tower𝑠𝑤𝑡 Sum 𝒉𝑓
+, ˆ𝑟𝑣𝑡𝑟= Tower𝑣𝑡𝑟 Sum 𝒉𝑓
+,
+ˆ𝑟𝑤𝑡𝑟= Tower𝑤𝑡𝑟 Sum 𝒉𝑓
+, ˆ𝑟𝑙𝑡𝑟= Tower𝑙𝑡𝑟 Sum 𝒉𝑓
+,
+where
+Tower(·) = Sigmoid MLP(·)
+(6)
+After getting all the estimated rewards ˆ𝑟𝑠𝑤𝑡, . . . and the ground-
+truth labels 𝑦𝑠𝑤𝑡, . . . for each session, we directly minimize the
+binary cross-entropy loss to train the RM. The loss function LRM
+is defined as follows:
+LRM = −
+𝑥𝑡𝑟
+∑︁
+𝑠𝑤𝑡,...
+ 𝑦𝑥𝑡𝑟log (ˆ𝑟𝑥𝑡𝑟) + (1 −𝑦𝑥𝑡𝑟) log (1 −ˆ𝑟𝑥𝑡𝑟)
+(7)
+3.3.2
+Iterative Preference Alignment. Based on pre-trained RM
+𝑅(𝒖, S) and current OneRec M𝑡, we generate 𝑁different responses
+for each user by beam search:
+S𝑛
+𝑢∼𝑀𝑡(H𝑢)
+for all 𝑢∈U and 𝑛∈[𝑁],
+(8)
+where we use [𝑁] to denote {1, 2, . . . , 𝑁}.
+Then we computes the reward 𝑟𝑛𝑢for each of these responses
+based on the RM 𝑅(𝒖, S):
+𝑟𝑛
+𝑢= 𝑅(𝒖, S𝑛
+𝑢)
+(9)
+Next we build the preference pairs 𝐷pairs
+𝑡
+= (S𝑤
+𝑢, S𝑙𝑢, H𝑢) by
+choosing the winner response (S𝑤
+𝑢, H𝑢) with the highest reward
+value and a loser response (S𝑙𝑢, H𝑢) with the lowest reward value.
+Given the preference pairs, we can now train a new model 𝑀𝑡+1
+which is initialized from model 𝑀𝑡, and updated with a loss function
+that combines the DPO loss [35] for learning from the preference
+pairs. The loss corresponding to each preference pair is as follows:
+LDPO = LDPO(S𝑤
+𝑢, S𝑙
+𝑢|H𝑢)
+= −log𝜎
+ 
+𝛽log 𝑀𝑡+1(S𝑤
+𝑢|H𝑢)
+𝑀𝑡(S𝑤
+𝑢|H𝑢)
+−𝛽log 𝑀𝑡+1(S𝑙𝑢|H𝑢)
+𝑀𝑡(S𝑙𝑢|H𝑢)
+!
+.
+(10)
+As shown in Algorithm 2 and Figure 2 (b), the overall procedure
+involves training a sequence of models 𝑀𝑡, . . . , 𝑀𝑇. To mitigate the
+computational burden during beam search inference, we randomly
+sample only 𝑟DPO = 1% data for preference alignment. For each
+successive model 𝑀𝑡+1, it initializes from previous model 𝑀𝑡and
+utilizes the preference data 𝐷pairs
+𝑡
+generated by the 𝑀𝑡for training.
+DPO Sample Server
+1B Parameters
+Online Serving
+Recommended
+List
+Request
+Model Parameters Sync
+Distributed Training System
+Model Parameters Sync
+𝑺𝒖𝒘, 𝑺𝒖𝒍
+Response 𝑺𝒖𝒏
+Reward 𝒓𝒖𝒏
+DPO Server
+Reward Model
+𝑹(𝒖, 𝑺)
+Offline Model Trainer
+1B Parameters
+Online Infer Model
+1B Parameters
+Log Collect &
+Preprocess
+Figure 3: Framework of Online Deployment of OneRec.
+
+===== PAGE 6 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Deng et al.
+Table 1: Offline performance of our proposed OneRec (green) with pointwise methods (brown) , listwise methods (blue)
+and preference alignment methods (yellow) . Best results are in bold, sub-optimal results are underlined. Metrics with ↑
+indicate higher is better, while ↓indicates lower is better.
+Model
+Watching-Time Metrics
+Interaction Metrics
+swt↑
+vtr↑
+wtr↑
+ltr↑
+mean
+max
+mean
+max
+mean
+max
+mean
+max
+Pointwise Discriminative Method
+SASRec
+0.0375±0.002
+0.0803±0.005
+0.4313±0.013
+0.5801±0.013
+0.00294±0.001
+0.00978±0.001
+0.0314±0.002
+0.0604±0.004
+BERT4Rec
+0.0336±0.002
+0.0706±0.004
+0.4192±0.014
+0.5633±0.013
+0.00281±0.001
+0.00932±0.001
+0.0316±0.002
+0.0606±0.004
+FDSA
+0.0325±0.002
+0.0683±0.005
+0.4145±0.015
+0.5588±0.014
+0.00271±0.001
+0.00921±0.001
+0.0313±0.002
+0.0604±0.003
+Pointwise Generative Method
+TIGER-0.1B
+0.0879±0.007
+0.1286±0.010
+0.5826±0.016
+0.6625±0.017
+0.00277±0.001
+0.00671±0.001
+0.0316±0.004
+0.0541±0.007
+TIGER-1B
+0.0873±0.006
+0.1368±0.010
+0.5827±0.015
+0.6776±0.015
+0.00292±0.001
+0.00758±0.001
+0.0323±0.004
+0.0579±0.008
+Listwise Generative Method
+OneRec-0.1B
+0.0973±0.010
+0.1501±0.015
+0.6001±0.021
+0.6981±0.021
+0.00326±0.001
+0.00870±0.001
+0.0349±0.009
+0.0642±0.015
+OneRec-1B
+0.0991±0.008
+0.1529±0.012
+0.6039±0.020
+0.7013±0.020
+0.00349±0.001
+0.00919±0.002
+0.0360±0.005
+0.0660±0.008
+Listwise Generative Method with Preference Alignment
+OneRec-1B+DPO
+0.1014±0.010
+0.1595±0.015
+0.6127±0.017
+0.7116±0.016
+0.00339±0.001
+0.00896±0.001
+0.0351±0.004
+0.0644±0.008
+OneRec-1B+IPO
+0.0979±0.003
+0.1528±0.005
+0.6000±0.007
+0.7012±0.007
+0.00335±0.001
+0.00905±0.001
+0.0350±0.003
+0.0654±0.004
+OneRec-1B+cDPO
+0.0993±0.006
+0.1547±0.008
+0.6030±0.011
+0.7030±0.009
+0.00339±0.001
+0.00901±0.001
+0.0355±0.006
+0.0652±0.009
+OneRec-1B+rDPO
+0.1005±0.006
+0.1555±0.008
+0.6071±0.014
+0.7059±0.011
+0.00339±0.001
+0.00899±0.001
+0.0357±0.004
+0.0657±0.006
+OneRec-1B+CPO
+0.0993±0.008
+0.1538±0.012
+0.6045±0.021
+0.7029±0.018
+0.00343±0.001
+0.00911±0.002
+0.0357±0.008
+0.0659±0.014
+OneRec-1B+simPO
+0.0995±0.008
+0.1536±0.013
+0.6047±0.016
+0.7022±0.015
+0.00349±0.001
+0.00918±0.001
+0.0360±0.005
+0.0659±0.008
+OneRec-1B+S-DPO
+0.1021±0.008
+0.1575±0.013
+0.6096±0.016
+0.7070±0.015
+0.00345±0.001
+0.00909±0.001
+0.0361±0.004
+0.0659±0.008
+OneRec-1B+IPA
+0.1025±0.009 0.1933±0.017 0.6141±0.020 0.7646±0.021 0.00354±0.001 0.00992±0.001 0.0397±0.004 0.1203±0.010
+4
+System Deployment
+OneRec has been successfully implemented in real-world indus-
+trial scenarios. Balancing stability and performance, we deploy the
+OneRec-1B for online services. As illustrated in Figure 3, our deploy-
+ment architecture consists of three core components: 1) the training
+system, 2) the online serving system, and 3) the DPO sample server.
+The system processes collected interaction logs as training data,
+initially adopting the next token prediction objective LNTP to train
+the seed model. After convergence, we add the DPO loss LDPO for
+preference alignment, leveraging XLA and bfloat16 mixed-precision
+training to optimize computational efficiency and memory utiliza-
+tion. The trained parameters are synchronized to the online infer-
+ence module and the DPO sampling server for real-time serving and
+preference-based data selection. To enhance inference performance,
+we implement two key optimizations: the key-value cache decod-
+ing mechanism combined with float16 quantization to reduce GPU
+memory overhead, and the beam search configuration with beam
+size of 128 to balance generation quality and latency. Additionally,
+thanks to the MoE architecture, during inference only 13% of the
+parameters are activated.
+5
+Experiment
+In this section, we first compare OneRec with the point-wise meth-
+ods and several DPO variations in offline settings. Then, we conduct
+some ablation experiments on our proposed module to verify the ef-
+fectiveness of OneRec. Finally, we deploy OneRec to the online and
+conduct A/B test to further validate its performance on Kuaishou.
+5.1
+Experimental Settings
+5.1.1
+Implementation Details. Our model is trained using the Adam
+optimizer with an initial learning rate of 2×10−4. We utilize NVIDIA
+A800 GPUs for OneRec optimization. The DPO sample ratio 𝑟DPO
+is set to 1% throughout training and we generate 𝑁= 128 different
+responses for each user by beam search; The semantic identifier
+clustering process employs 𝐾= 8192 clusters for each codebook
+layer and the number of codebook layers is set to 𝐿= 3; The Mixture-
+of-Experts architecture contains 𝑁MoE = 24 expert with 𝐾MoE = 2
+experts activated per forward pass through top-𝑘selection; For
+session modeling, we consider𝑚= 5 target session items and adopt
+𝑛= 256 historical behavior as context.
+5.1.2
+Baseline Methods. We adopt the following representative
+recommendation models, DPO and its variants to serve as additional
+baselines for comparison. The baseline methods include:
+• SASRec [22] employs a unidirectional Transformer architecture
+to capture sequential dependencies in user-item interactions for
+next-item prediction.
+• BERT4Rec [40] leverages bidirectional Transformers with masked
+language modeling to learn contextual item representations through
+sequence reconstruction.
+• FDSA [50] implements dual self-attention pathways to jointly
+model item-level transitions and feature-level transformation
+patterns in heterogeneous recommendation scenarios.
+• TIGER [36] leverages hierarchical semantic identifiers and gener-
+ative retrieval techniques for sequential recommendation through
+auto-regressive sequence generation.
+
+===== PAGE 7 =====
+OneRec: Unifying Retrieve and Rank with Generative Recommender and Preference Alignment
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+• DPO [35] formalizes preference optimization with a closed-form
+reward function derived from human feedback data via implicit
+reward modeling.
+• IPO [1] proposes a theoretically grounded preference optimiza-
+tion framework which bypass the approximations inherent in
+standard DPO.
+• cDPO [30] introduces a robustness-aware variant incorporating
+a label flipping rate parameter 𝜖to account for noisy preference
+annotations.
+• rDPO [5] develops an unbiased loss estimator using importance
+sampling to reduce variance in preference optimization.
+• CPO [47] unifies contrastive learning with preference optimiza-
+tion through joint training of sequence likelihood rewards and
+supervised fine-tuning objectives.
+• simPO [29] conducts preference optimization by employing
+sequence-level reward margins while eliminating reference model
+dependencies through normalized probability averaging.
+• S-DPO [4] adapts DPO for recommendation systems through
+hard negative sampling and multi-item contrastive learning to
+enhance ranking accuracy.
+5.1.3
+Evaluation Metric. We evaluate the model’s performance
+with several key metrics. Each metric serves a distinct purpose in
+assessing different aspects of the model’s output and we conduct
+the evaluation on a randomly sampled set of test cases in each
+iteration. To estimate the probabilities of various interactions for
+each specific user-session pair, we employ the pre-trained reward
+model to assess the value of recommended sessions. We calculate
+the mean reward for different target metrics, including session
+watch time (swt), view probability (vtr), follow probability (wtr)
+and like probability (ltr). Among these targets, swt and vtr are
+watching-time metrics, while wtr and ltr are interaction metrics.
+0.1025
+0.1020 
+0.1038 
+0.1082 
+0.1099 
+0.1933
+0.2076
+0.2087
+0.2222
+0.2133
+0.05
+0.1
+0.15
+0.2
+0.25
+1%
+2%
+3%
+4%
+5%
+mean
+max
+swt
+0.6087
+0.6032 
+0.6068 
+0.6141 
+0.6107 
+0.7319
+0.7385
+0.7594
+0.7646
+0.7514
+0.5
+0.575
+0.65
+0.725
+0.8
+1%
+2%
+3%
+4%
+5%
+mean
+max
+vtr
+0.00354 
+0.00352 
+0.00349 
+0.00340 
+0.00352 
+0.00992 
+0.01115 
+0.01080 
+0.01007 
+0.01072 
+0.00200
+0.00500
+0.00800
+0.01100
+0.01400
+1%
+2%
+3%
+4%
+5%
+mean
+max
+wtr
+0.0397
+0.0399 
+0.0429 
+0.0435 
+0.0456 
+0.1203
+0.1376
+0.1544
+0.1559
+0.1463
+0
+0.045
+0.09
+0.135
+0.18
+1%
+2%
+3%
+4%
+5%
+mean
+max
+ltr
+Figure 4: The ablation study on DPO sample ratio 𝑟DPO. The
+results indicate that a 1% ratio of DPO training leads to sig-
+nificant gains but further increase the sample ratio results
+in limited improvements.
+5.2
+Offline Performance
+Table 1 presents the comprehensive comparison between OneRec
+and various baselines. For watching-time metric we mainly care
+about the session watch time (swt) and like probability (ltr) in
+interaction metrics. Our result reveals three key observations:
+First, the proposed session-wise generation approach sig-
+nificantly outperforms traditional dot-product-based meth-
+ods and point-wise generation methods like TIGER. OneRec-
+1B achieves 1.78% higher maximum swt and 3.36% higher maximum
+ltr compared to TIGER-1B. This demonstrates the advantage of
+session-wise modeling in maintaining contextual coherence across
+recommendations, whereas point-wise methods struggle to balance
+coherence and diversity in generated outputs.
+Second, a small ratio of DPO training yields substantial
+gains. With only 1% DPO training ratio (𝑟DPO), OneRec-1B+IPA
+surpasses the base OneRec-1B by 4.04% in maximum swt and 5.43%
+in maximum ltr. This suggests limited DPO training can effectively
+aligns the model with desired generation patterns.
+Third, the proposed IPA strategy outperforms various ex-
+isting DPO variants. As shown in Table 1, IPA achieves supe-
+rior performance compared to alternative DPO implementations.
+Notably, some DPO baselines underperform even the non-aligned
+OneRec-1B model, suggesting that iterative mining of self-generated
+outputs for preference selection proves more effective than other
+methods.
+5.3
+Ablation Study
+5.3.1
+DPO Sample Ratio Ablation. In order to investigate the im-
+pact of sample ratio 𝑟DPO in DPO training, we varied the DPO sam-
+ple ratio from 1% to 5% under controlled conditions. As illustrated
+in Figure 4, ablation results demonstrate that increasing the sample
+ratio yields marginal performance improvements across multiple
+evaluation targets. Notably, the performance gains beyond the 1%
+baseline remain insignificant despite increased computational ex-
+penditure. It worth noting that there exists a linear relationship
+between and GPU resource utilization during DPO sample server
+inference: the 5% sample ratio requires 5× more GPU resources than
+the 1% baseline. This scaling characteristic establishes an explicit
+trade-off between computational efficiency and model performance.
+Therefore, after balancing the best trade-off with computation effi-
+ciency and performance, we apply 1% DPO sample ratio for training,
+which achieves average 95% of the maximum observed performance
+while requiring only 20% of the computational resources needed
+for higher sample ratio.
+5.3.2
+Model Scaling Ablation. We evaluate how OneRec performs
+when the model scale increases. As Figure 6 shows, scaling OneRec
+from 0.05B to 1B achieves consistent accuracy gains, demonstrating
+consistent scaling properties. Specifically, compared to OneRec-
+0.05B, OneRec-0.1B achieves a significant maximum 14.45% gain in
+accuracy, and 5.09%, 5.70% and 5.69% additional accuracy gains can
+be achieved when scaling to 0.2B, 0,5B and 1B.
+5.4
+Prediction Dynamics of OneRec
+As shown in Figure 5, we present the predicted probability dis-
+tributions of 8192 codes across different layer, where the red star
+denotes the semantic ID of the item with the highest reward value.
+
+===== PAGE 8 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Deng et al.
+Layer 1
+Layer 2
+Layer 3
+Figure 5: The visualization of the probability distribution of the softmax output for each layer of the semantic ID. The red star
+represents the sematic ID of item which has the highest reward value.
+Figure 6: Scalability of OneRec on model scaling. The results
+show that OneRec constantly benefits from performance
+improvement when the parameters are scaled up.
+Compared to the OneRec baseline, OneRec+IPA exhibits a signifi-
+cant confidence shift in prediction distributions, indicating that our
+proposed preference alignment strategy effectively encourages the
+base model to produce preferred generation patterns. Furthermore,
+we observe that the probability distribution in the first layer demon-
+strates greater divergence (entropy = 6.00) compared to subsequent
+layers (average entropy = 3.71 in the second layer and entropy =
+0.048 in third layer), which exhibit progressively concentrated dis-
+tributions. This hierarchical uncertainty reduction can be attributed
+to the autoregressive decoding mechanism: the initial layer’s pre-
+dictions inherit higher uncertainty from preceding decoding steps,
+while later layers benefit from accumulated context that constrains
+the decision space.
+5.5
+Online A/B Test
+To evaluate the online performance of OneRec, we conduct strict
+online A/B tests on Kuaishou’s video recommendation scenarios of
+main page and we compare the performance of OneRec and current
+multi-stage recommender system with 1% main traffic for experi-
+ments. We use Total Watch Time to measure the total time that users
+spend watching videos and Average View Duration calculates the av-
+erage watch time per video when the user is exposed to a requested
+session by the recommendation system. Online evaluation shows
+that OneRec has achieved 1.68% improvement in total watch time
+and 6.56% improvement in average view duration, which indicates
+that OneRec achieves much better recommendation results and
+brings considerable revenue increments for the platform.
+Table 2: The absolute improvement of OneRec compared
+to the current multi-stage system in the online A/B testing
+setting.
+Model
+Total Watch Time
+Average View Duration
+OneRec-0.1B
++0.57%
++4.26%
+OneRec-1B
++1.21%
++5.01%
+OneRec-1B+IPA
++1.68%
++6.56%
+6
+Conclusion
+In this paper, we focus on the introduction of an industrial solution
+for single-stage generative recommendation. Our solution estab-
+lishes three key contributions: First, we effectively scale the model
+parameters with high computational efficiency by applying the
+MoE architecture, offering a scalable blueprint for large-scale indus-
+trial recommendation. Next, we find the necessity of modeling the
+contextual information of target items in a session-wise generation
+manner, proving contextual sequence modeling inherently captures
+user preference dynamics better than isolated point-wise manner.
+Furthermore, we propose an Iterative Preference Alignment (IPA)
+strategy to improve OneRec’s generalization across diverse user
+preference patterns. Extensive offline experiments and online A/B
+testing verify the effectiveness and efficiency of OneRec. Addition-
+ally, our analysis of online results reveals that, besides user watch
+time, our model has limitations in interactive indicators, such as
+likes. In future research, we aim to enhance the end-to-end genera-
+tive recommendation’s capability in multi-objective modeling to
+provide a better user experience.
+
+===== PAGE 9 =====
+OneRec: Unifying Retrieve and Rank with Generative Recommender and Preference Alignment
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+References
+[1] Mohammad Gheshlaghi Azar, Zhaohan Daniel Guo, Bilal Piot, Remi Munos,
+Mark Rowland, Michal Valko, and Daniele Calandriello. 2024. A general theoreti-
+cal paradigm to understand learning from human preferences. In International
+Conference on Artificial Intelligence and Statistics. PMLR, 4447–4455.
+[2] Christopher JC Burges. 2010. From ranknet to lambdarank to lambdamart: An
+overview. Learning 11, 23-581 (2010), 81.
+[3] Jianxin Chang, Chenbin Zhang, Zhiyi Fu, Xiaoxue Zang, Lin Guan, Jing Lu, Yiqun
+Hui, Dewei Leng, Yanan Niu, Yang Song, et al. 2023. TWIN: TWo-stage interest
+network for lifelong user behavior modeling in CTR prediction at kuaishou. In
+Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and
+Data Mining. 3785–3794.
+[4] Yuxin Chen, Junfei Tan, An Zhang, Zhengyi Yang, Leheng Sheng, Enzhi Zhang,
+Xiang Wang, and Tat-Seng Chua. 2024. On Softmax Direct Preference Optimiza-
+tion for Recommendation. In The Thirty-eighth Annual Conference on Neural
+Information Processing Systems. https://openreview.net/forum?id=qp5VbGTaM0
+[5] Sayak Ray Chowdhury, Anush Kini, and Nagarajan Natarajan. 2024. Provably
+Robust DPO: Aligning Language Models with Noisy Feedback. In ICML 2024.
+[6] Paul Covington, Jay Adams, and Emre Sargin. 2016. Deep neural networks
+for youtube recommendations. In Proceedings of the 10th ACM conference on
+recommender systems. 191–198.
+[7] Damai Dai, Chengqi Deng, Chenggang Zhao, RX Xu, Huazuo Gao, Deli Chen,
+Jiashi Li, Wangding Zeng, Xingkai Yu, Y Wu, et al. 2024. Deepseekmoe: Towards
+ultimate expert specialization in mixture-of-experts language models. arXiv
+preprint arXiv:2401.06066 (2024).
+[8] Nicola De Cao, Gautier Izacard, Sebastian Riedel, and Fabio Petroni. 2020. Au-
+toregressive entity retrieval. arXiv preprint arXiv:2010.00904 (2020).
+[9] Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin,
+Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al.
+2022. Glam: Efficient scaling of language models with mixture-of-experts. In
+International Conference on Machine Learning. PMLR, 5547–5569.
+[10] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad
+Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan,
+et al. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 (2024).
+[11] Hongliang Fei, Jingyuan Zhang, Xingxuan Zhou, Junhao Zhao, Xinyang Qi, and
+Ping Li. 2021. GemNN: gating-enhanced multi-task neural networks with feature
+interaction learning for CTR prediction. In Proceedings of the 44th international
+ACM SIGIR conference on research and development in information retrieval. 2166–
+2171.
+[12] Chao Feng, Wuchao Li, Defu Lian, Zheng Liu, and Enhong Chen. 2022. Recom-
+mender forest for efficient retrieval. Advances in Neural Information Processing
+Systems 35 (2022), 38912–38924.
+[13] Luke Gallagher, Ruey-Cheng Chen, Roi Blanco, and J Shane Culpepper. 2019.
+Joint optimization of cascade ranking models. In Proceedings of the twelfth ACM
+international conference on web search and data mining. 15–23.
+[14] Tiezheng Ge, Kaiming He, Qifa Ke, and Jian Sun. 2013. Optimized product
+quantization. IEEE transactions on pattern analysis and machine intelligence 36, 4
+(2013), 744–755.
+[15] Huifeng Guo, Ruiming Tang, Yunming Ye, Zhenguo Li, and Xiuqiang He. 2017.
+DeepFM: a factorization-machine based neural network for CTR prediction. arXiv
+preprint arXiv:1703.04247 (2017).
+[16] B Hidasi. 2015. Session-based Recommendations with Recurrent Neural Networks.
+arXiv preprint arXiv:1511.06939 (2015).
+[17] Michael E Houle and Michael Nett. 2014. Rank-based similarity search: Reducing
+the dimensional dependence. IEEE transactions on pattern analysis and machine
+intelligence 37, 1 (2014), 136–150.
+[18] Jiri Hron, Karl Krauth, Michael Jordan, and Niki Kilbertus. 2021. On component
+interactions in two-stage recommender systems. Advances in neural information
+processing systems 34 (2021), 2744–2757.
+[19] Po-Sen Huang, Xiaodong He, Jianfeng Gao, Li Deng, Alex Acero, and Larry
+Heck. 2013. Learning deep structured semantic models for web search using
+clickthrough data. In Proceedings of the 22nd ACM international conference on
+Information & Knowledge Management. 2333–2338.
+[20] Xu Huang, Defu Lian, Jin Chen, Liu Zheng, Xing Xie, and Enhong Chen. 2023.
+Cooperative Retriever and Ranker in Deep Recommenders. In Proceedings of the
+ACM Web Conference 2023. 1150–1161.
+[21] Herve Jegou, Matthijs Douze, and Cordelia Schmid. 2010. Product quantization
+for nearest neighbor search. IEEE transactions on pattern analysis and machine
+intelligence 33, 1 (2010), 117–128.
+[22] Wang-Cheng Kang and Julian McAuley. 2018. Self-attentive sequential recom-
+mendation. In 2018 IEEE international conference on data mining (ICDM). IEEE,
+197–206.
+[23] Zhirui Kuai, Zuxu Chen, Huimu Wang, Mingming Li, Dadong Miao, Wang Binbin,
+Xusong Chen, Li Kuang, Yuxing Han, Jiaxing Wang, et al. 2024. Breaking the
+Hourglass Phenomenon of Residual Quantization: Enhancing the Upper Bound of
+Generative Retrieval. In Proceedings of the 2024 Conference on Empirical Methods
+in Natural Language Processing: Industry Track. 677–685.
+[24] Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. 2022.
+Autoregressive image generation using residual quantization. In Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition. 11523–11532.
+[25] Han Liu, Yinwei Wei, Xuemeng Song, Weili Guan, Yuan-Fang Li, and Liqiang
+Nie. 2024. MMGRec: Multimodal Generative Recommendation with Transformer
+Model. arXiv preprint arXiv:2404.16555 (2024).
+[26] Shichen Liu, Fei Xiao, Wenwu Ou, and Luo Si. 2017. Cascade ranking for opera-
+tional e-commerce search. In Proceedings of the 23rd ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining. 1557–1565.
+[27] Xinchen Luo, Jiangxia Cao, Tianyu Sun, Jinkai Yu, Rui Huang, Wei Yuan, Hezheng
+Lin, Yichen Zheng, Shiyao Wang, Qigen Hu, et al. 2024.
+QARM: Quantita-
+tive Alignment Multi-Modal Recommendation at Kuaishou.
+arXiv preprint
+arXiv:2411.11739 (2024).
+[28] Xu Ma, Pengjie Wang, Hui Zhao, Shaoguo Liu, Chuhan Zhao, Wei Lin, Kuang-
+Chih Lee, Jian Xu, and Bo Zheng. 2021. Towards a better tradeoff between
+effectiveness and efficiency in pre-ranking: A learnable feature selection based
+approach. In Proceedings of the 44th International ACM SIGIR Conference on
+Research and Development in Information Retrieval. 2036–2040.
+[29] Yu Meng, Mengzhou Xia, and Danqi Chen. 2024. SimPO: Simple Preference
+Optimization with a Reference-Free Reward. In Advances in Neural Information
+Processing Systems (NeurIPS).
+[30] Eric Mitchell. [n. d.]. A note on dpo with noisy preferences and relationship to
+ipo, 2023. URL https://ericmitchell. ai/cdpo. pdf ([n. d.]).
+[31] Marius Muja and David G Lowe. 2014. Scalable nearest neighbor algorithms
+for high dimensional data. IEEE transactions on pattern analysis and machine
+intelligence 36, 11 (2014), 2227–2240.
+[32] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela
+Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022.
+Training language models to follow instructions with human feedback. Advances
+in neural information processing systems 35 (2022), 27730–27744.
+[33] Qi Pi, Guorui Zhou, Yujing Zhang, Zhe Wang, Lejian Ren, Ying Fan, Xiaoqiang
+Zhu, and Kun Gai. 2020. Search-based user interest modeling with lifelong
+sequential behavior data for click-through rate prediction. In Proceedings of the
+29th ACM International Conference on Information & Knowledge Management.
+2685–2692.
+[34] Jiarui Qin, Jiachen Zhu, Bo Chen, Zhirong Liu, Weiwen Liu, Ruiming Tang, Rui
+Zhang, Yong Yu, and Weinan Zhang. 2022. Rankflow: Joint optimization of multi-
+stage cascade ranking systems as flows. In Proceedings of the 45th International
+ACM SIGIR Conference on Research and Development in Information Retrieval.
+814–824.
+[35] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano
+Ermon, and Chelsea Finn. 2024. Direct preference optimization: Your language
+model is secretly a reward model. Advances in Neural Information Processing
+Systems 36 (2024).
+[36] Shashank Rajput, Nikhil Mehta, Anima Singh, Raghunandan Hulikal Keshavan,
+Trung Vu, Lukasz Heldt, Lichan Hong, Yi Tay, Vinh Tran, Jonah Samost, et al.
+2023. Recommender systems with generative retrieval. Advances in Neural
+Information Processing Systems 36 (2023), 10299–10315.
+[37] Wentao Shi, Jiawei Chen, Fuli Feng, Jizhi Zhang, Junkang Wu, Chongming Gao,
+and Xiangnan He. 2023. On the theories behind hard negative sampling for
+recommendation. In Proceedings of the ACM Web Conference 2023. 812–822.
+[38] Anshumali Shrivastava and Ping Li. 2014. Asymmetric LSH (ALSH) for sublinear
+time maximum inner product search (MIPS). Advances in neural information
+processing systems 27 (2014).
+[39] Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea
+Voss, Alec Radford, Dario Amodei, and Paul F Christiano. 2020. Learning to
+summarize with human feedback. Advances in Neural Information Processing
+Systems 33 (2020), 3008–3021.
+[40] Fei Sun, Jun Liu, Jian Wu, Changhua Pei, Xiao Lin, Wenwu Ou, and Peng Jiang.
+2019. BERT4Rec: Sequential recommendation with bidirectional encoder rep-
+resentations from transformer. In Proceedings of the 28th ACM international
+conference on information and knowledge management. 1441–1450.
+[41] Yubao Tang, Ruqing Zhang, Jiafeng Guo, and Maarten de Rijke. 2023. Recent
+advances in generative information retrieval. In Proceedings of the Annual In-
+ternational ACM SIGIR Conference on Research and Development in Information
+Retrieval in the Asia Pacific Region. 294–297.
+[42] Yi Tay, Vinh Tran, Mostafa Dehghani, Jianmo Ni, Dara Bahri, Harsh Mehta,
+Zhen Qin, Kai Hui, Zhe Zhao, Jai Gupta, et al. 2022. Transformer memory as a
+differentiable search index. Advances in Neural Information Processing Systems
+35 (2022), 21831–21843.
+[43] Lidan Wang, Jimmy Lin, and Donald Metzler. 2011. A cascade ranking model
+for efficient ranked retrieval. In Proceedings of the 34th international ACM SIGIR
+conference on Research and development in Information Retrieval. 105–114.
+[44] Yunli Wang, Zhiqiang Wang, Jian Yang, Shiyang Wen, Dongying Kong, Han Li,
+and Kun Gai. 2024. Adaptive Neural Ranking Framework: Toward Maximized
+Business Goal for Cascade Ranking Systems. In Proceedings of the ACM on Web
+Conference 2024. 3798–3809.
+
+===== PAGE 10 =====
+Conference acronym ’XX, June 03–05, 2018, Woodstock, NY
+Deng et al.
+[45] Ye Wang, Jiahao Xun, Minjie Hong, Jieming Zhu, Tao Jin, Wang Lin, Haoyuan
+Li, Linjun Li, Yan Xia, Zhou Zhao, et al. 2024. EAGER: Two-Stream Generative
+Recommender with Behavior-Semantic Collaboration. In Proceedings of the 30th
+ACM SIGKDD Conference on Knowledge Discovery and Data Mining. 3245–3254.
+[46] Zhe Wang, Liqin Zhao, Biye Jiang, Guorui Zhou, Xiaoqiang Zhu, and Kun Gai.
+2020. Cold: Towards the next generation of pre-ranking system. arXiv preprint
+arXiv:2007.16122 (2020).
+[47] Haoran Xu, Amr Sharaf, Yunmo Chen, Weiting Tan, Lingfeng Shen, Benjamin
+Van Durme, Kenton Murray, and Young Jin Kim. 2024. Contrastive preference
+optimization: Pushing the boundaries of llm performance in machine translation.
+arXiv preprint arXiv:2401.08417 (2024).
+[48] Shuyuan Xu, Wenyue Hua, and Yongfeng Zhang. 2024. Openp5: An open-source
+platform for developing, training, and evaluating llm-based recommender sys-
+tems. In Proceedings of the 47th International ACM SIGIR Conference on Research
+and Development in Information Retrieval. 386–394.
+[49] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco
+Tagliasacchi. 2021. Soundstream: An end-to-end neural audio codec. IEEE/ACM
+Transactions on Audio, Speech, and Language Processing 30 (2021), 495–507.
+[50] Tingting Zhang, Pengpeng Zhao, Yanchi Liu, Victor S Sheng, Jiajie Xu, Deqing
+Wang, Guanfeng Liu, Xiaofang Zhou, et al. 2019. Feature-level deeper self-
+attention network for sequential recommendation.. In IJCAI. 4320–4326.
+[51] Bowen Zheng, Yupeng Hou, Hongyu Lu, Yu Chen, Wayne Xin Zhao, Ming
+Chen, and Ji-Rong Wen. 2024. Adapting large language models by integrating
+collaborative semantics for recommendation. In 2024 IEEE 40th International
+Conference on Data Engineering (ICDE). IEEE, 1435–1448.
+[52] Guorui Zhou, Na Mou, Ying Fan, Qi Pi, Weijie Bian, Chang Zhou, Xiaoqiang
+Zhu, and Kun Gai. 2019. Deep interest evolution network for click-through rate
+prediction. In Proceedings of the AAAI conference on artificial intelligence, Vol. 33.
+5941–5948.
+[53] Guorui Zhou, Xiaoqiang Zhu, Chenru Song, Ying Fan, Han Zhu, Xiao Ma, Yanghui
+Yan, Junqi Jin, Han Li, and Kun Gai. 2018. Deep interest network for click-through
+rate prediction. In Proceedings of the 24th ACM SIGKDD international conference
+on knowledge discovery & data mining. 1059–1068.
+[54] Han Zhu, Xiang Li, Pengye Zhang, Guozheng Li, Jie He, Han Li, and Kun Gai.
+2018. Learning tree-based deep model for recommender systems. In Proceedings
+of the 24th ACM SIGKDD international conference on knowledge discovery & data
+mining. 1079–1088.
+[55] Barret Zoph, Irwan Bello, Sameer Kumar, Nan Du, Yanping Huang, Jeff Dean,
+Noam Shazeer, and William Fedus. 2022. Designing effective sparse expert models.
+arXiv preprint arXiv:2202.08906 2, 3 (2022), 17.
