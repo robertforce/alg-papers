@@ -1,7 +1,7 @@
 # MFU（Model FLOPs Utilization，模型浮点运算利用率）详解：计算原理与推荐模型 MFU 偏低的根因
 
 > 类型：技术概念解析（通用原理 + 论文事实 + 说明性示例）
-> 相关概念：HFU、Arithmetic Intensity、FLOPs 计数、Roofline 模型、Parameter Server、Embedding Lookup
+> 相关概念：GEMM（通用矩阵乘法）、HFU、Arithmetic Intensity、FLOPs 计数、Roofline 模型、Parameter Server、Embedding Lookup
 
 ---
 
@@ -98,7 +98,7 @@ MFU = 实际吞吐 × 单样本理论FLOPs / 峰值算力
 
 把分子分母拆开，任何 MFU 损失都来自三类问题：
 
-1. **算子层：kernel 效率低**（算子形状小 → Tensor Core 填不满；访存受限 → 算得快不如搬得快）；
+1. **算子层：kernel 效率低**（算子形状小 → Tensor Core 填不满；访存受限 → 算得快不如搬得快，GEMM 层面的机理详见第 3 节）；
 2. **模型层：计算密度低**（模型本身每样本 FLOPs 太小，或大量操作不产生 FLOPs）；
 3. **系统层：流水线气泡**（等数据、等通信、CPU-GPU 传输、host 侧开销，GPU 在"空转"）。
 
@@ -106,13 +106,93 @@ MFU = 实际吞吐 × 单样本理论FLOPs / 峰值算力
 
 ---
 
-## 3. 为什么推荐算法模型的 MFU 显著低于 LLM
+## 3. GEMM（通用矩阵乘法）：理解算子效率的基石
+
+GEMM（General Matrix Multiplication，通用矩阵乘法）是 BLAS（Basic Linear Algebra Subprograms，基础线性代数子程序）标准中的 **Level 3** 例程，也是深度学习负载的核心：Transformer 的全部线性层、attention 的 QKᵀ 与 A·V、全连接层、1×1 卷积（经 im2col 或直接映射），最终都由一次或多次 GEMM 完成。前文公式里的 `6N` 与 `12·L·h·s`，本质上就是若干次 GEMM 的 FLOPs 求和。
+
+### 3.1 定义与 BLAS 三级例程
+
+**GEMM 的计算定义**：
+
+```
+C = α·A×B + β·C
+A ∈ R^(M×K)，B ∈ R^(K×N)，C ∈ R^(M×N)
+FLOPs = 2·M·N·K    （M·N·K 次 MAC，每次乘加计 2 FLOPs）
+```
+
+习惯上用三元组 `(M, N, K)` 描述一个 GEMM 的形状。深度学习中的对应：M = batch × token 数（输出行数），K = 输入特征维度，N = 输出特征维度。
+
+**为什么 GPU 的算力押注在 GEMM 上？看 BLAS 三级的算术强度对比**：
+
+| BLAS 级别 | 典型例程 | 计算量 | 访存量 | 算术强度 |
+|---|---|---|---|---|
+| Level 1（向量-向量） | AXPY: `y ← αx + y` | O(n) | O(n) | O(1) |
+| Level 2（矩阵-向量） | GEMV: `y ← Ax` | O(m·n) | O(m+n) | O(1) |
+| Level 3（矩阵-矩阵） | GEMM: `C ← AB` | O(m·n·k) | O(mn+nk+mk) | **O(维度)** |
+
+只有 Level 3 的计算量随维度**立方**增长、访存量只随**平方**增长，数据可以被充分复用，算术强度随维度线性上升——这是 GPU 把峰值 FLOPS 押注在 GEMM 上、深度学习框架把一切计算尽量表达成 GEMM 的根本原因，也是"算子能不能写成大 GEMM"成为性能分水岭的原因。
+
+### 3.2 GEMM 的算术强度：由最小维度决定
+
+FLOPs 与 HBM 访存量（按 BF16、每元素 2 字节；读 A、B 各一次，C 读一次写一次）：
+
+```
+FLOPs = 2·M·N·K
+访存 ≈ 2·(MK + NK + 2MN) 字节
+AI   = MNK / (MK + NK + 2MN)   （FLOPs/byte）
+```
+
+**说明性示例**（设 M=N=K=n，则 AI ≈ n/4）：
+
+- `n = 4096`（LLM 训练/prefill 的 FFN 层，M = batch×seq 上万）：AI ≈ **1024 FLOPs/byte**，远超 A100 BF16 平衡点（312×10¹² / 2039×10⁹ ≈ 153 FLOPs/byte）→ **compute-bound，能吃满算力**。
+- `M = 8, N = K = 4096`（LLM decode 单步投影的典型形状）：FLOPs ≈ 2.7×10⁸，访存 ≈ 3.4×10⁷ 字节，AI ≈ **8 FLOPs/byte** → **memory-bound**，利用率被带宽卡死。
+
+由此得到一条实用规律：**GEMM 的算术强度近似由最小的那个维度决定**（AI ≈ min(M, N, K) 的量级——当 M 很小时，分母被 B 矩阵的 NK 项主导，AI ≈ M）。所以"batch 大不大、序列长不长"（决定 M）直接决定算子落在 Roofline 哪一段：
+
+- LLM 训练 / prefill：M = batch × seq_len 轻松上万 → 大 GEMM → compute-bound；
+- LLM decode：M = batch（几~几百）→ 退化为近似 GEMV → memory-bound，这正是 **continuous batching 的动机：把有效 M 堆上去**；
+- 推荐模型 dense 层：M = batch（几百~几千），但 K、N 只有几十~一千出头，embedding dim 常见 8~64，min 维度极小 → AI 个位数到几十 → memory-bound。
+
+### 3.3 GPU 如何执行 GEMM：分块、Tensor Core 与小 GEMM 的三类损失
+
+主流实现（NVIDIA 上的 cuBLAS、CUTLASS，以及各芯片等价库）将 GEMM **分块（tiling）**执行：
+
+1. 把 C 按 tile（如 128×128）分块，A、B 对应的 K 向切片（如 128×32、32×128）分批搬入 **shared memory**；
+2. 线程块内的 warp 调用 **Tensor Core** 的 MMA 指令（如 16×8×16 的矩阵片乘加）做累加；
+3. 累加完成的 C tile 写回 HBM。
+
+一个 GEMM 想接近峰值算力，需要同时满足：
+
+- **tile 数量足够多**：把所有 SM（A100 有 108 个）填满并排满多个 wave；
+- **每个 tile 的 M、N、K 都足够大**（经验上 ≥ 数百）：Tensor Core 流水线才能满负荷。
+
+**小 GEMM 的三类典型损失**：
+
+1. **tile 填不满**：M=8 时，128×128 的 tile 里约 94% 是无效填充（或根本走不到 Tensor Core 路径），有效算力比例极低；
+2. **launch/调度开销占比失控**：一次 kernel launch 约几微秒，小 kernel 本身只执行几十微秒，launch、显存分配、shape 推断等 host 开销轻松吃掉 MFU；
+3. **尾波效应（wave quantization）**：tile 总数除不尽 SM 数时，最后一个 wave 里大部分 SM 空转——形状不规则的 GEMM 几乎必然踩中。
+
+反过来看，FlashAttention 等 fused kernel 的本质，是把"多个小算子"重写为"少数几个访存可控的大 GEMM 复合体"，这正是它快的原因，也是 LLM 生态持续优化的主战场；而推荐模型的大量细碎算子，尚未等到同等级别的融合基建。
+
+### 3.4 GEMM 视角回看 MFU 公式
+
+MFU 里的 `6N` 可以由 GEMM 公式直接推出：线性层权重 W ∈ R^(K×N)，对 T 个 token 做一次投影的 FLOPs = 2·T·K·N，即**每参数每 token 前向 2 FLOPs**，含反向 ×3 → 6N。attention 项 `12·L·h·s` 同理，是 QKᵀ（`s×d_head @ d_head×s`）与 A·V（`s×s @ s×d_head`）两组 batched GEMM 的求和。
+
+更重要的是，下一节的结论在这个视角下变得自然：
+
+- **LLM 的快**：由少数形状巨大、静态可预测的 GEMM 构成，每个 GEMM 都处在 Roofline 平台段；
+- **推荐模型的慢**：由大量形状小、动态变化的 GEMM + 零 FLOPs 的 gather（embedding lookup）构成，每个算子都落在 Roofline 斜坡段；
+- **生成式推荐（HSTU/OneRec 类）的效率红利**：本质上是把负载从"小 GEMM + 查表"替换为"大 GEMM"，让同样的硬件第一次有机会跑进 compute-bound 区间。
+
+---
+
+## 4. 为什么推荐算法模型的 MFU 显著低于 LLM
 
 工业界实践与多篇系统论文（Meta DLRM、百度 PaddleBox、阿里 XDL/DeepRec、字节与快手的大规模稀疏训练系统报告等）的共同结论是：**大规模稀疏推荐模型（CTR/CVR、排序、召回）训练的 GPU 有效利用率通常只有个位数百分比，优化好的密集计算部分也难超 20%–30%；而 LLM 训练普遍 40%+**。推理侧差距更大：推荐单请求推理 MFU 常低于 1%–5%，LLM 推理在 continuous batching 下可达 20%–50%（prefill 阶段更高）。
 
 根本原因可以概括为一句话：**LLM 是"计算密集型"（compute-bound）的稠密大矩阵计算，推荐模型是"访存密集型"（memory-bound）的稀疏查表 + 小矩阵计算**。下面逐条展开。
 
-### 3.1 Embedding 参数占绝对多数，但查表不产生任何 FLOPs
+### 4.1 Embedding 参数占绝对多数，但查表不产生任何 FLOPs
 
 这是最本质的一条，直接作用在 MFU 的分子上。
 
@@ -122,7 +202,7 @@ MFU = 实际吞吐 × 单样本理论FLOPs / 峰值算力
 
 > 这就是为什么推荐系统领域几乎不用 MFU 做核心指标，而是用 **samples/s（训练吞吐）、QPS 与 P99 延迟（推理）、GPU SM 占用率、端到端耗时**来评估。MFU 偏低在推荐场景很大程度上是**指标不适配**的表征，背后是真实的算力浪费。
 
-### 3.2 算子形状小且不规则，喂不饱 Tensor Core
+### 4.2 算子形状小且不规则，喂不饱 Tensor Core
 
 GPU 的峰值 FLOPS（如 A100 BF16 312 TFLOPS）是为**大 GEMM** 设计的，只有当 M、N、K 三个维度都足够大（经验上 ≥ 数百到上千）时，Tensor Core 的流水线才能被打满。
 
@@ -137,17 +217,17 @@ GPU 的峰值 FLOPS（如 A100 BF16 312 TFLOPS）是为**大 GEMM** 设计的，
 
 小 GEMM 的问题：Tensor Core 利用率低、kernel launch 开销占比高（一次 launch ~几微秒，而小 kernel 执行可能只有几十微秒）、无法有效融合。LLM 的形状静态性还使得 CUDA Graph、torch.compile、XLA 等图编译技术能稳定生效；推荐模型的**动态 shape 是图编译优化的天敌**，大量时间花在 launch 和调度上。
 
-### 3.3 计算强度（Arithmetic Intensity）低，天生平是 memory-bound
+### 4.3 计算强度（Arithmetic Intensity）低，天生平是 memory-bound
 
 Roofline 模型：`可达FLOPS = min(峰值FLOPS, 带宽 × 算术强度)`，其中算术强度 AI = FLOPs / 访存字节数。
 
-- LLM 的 encoder/FFN GEMM：AI 通常在 **50 ~ 200 FLOPs/byte**（h=4096 的矩阵乘 AI ≈ h/2 以上），远高于 A100 的平衡点（FLOPS/带宽 ≈ 312×10¹² / 2039×10⁹ ≈ 153），属于 compute-bound，**能吃满算力**。
+- LLM 的 encoder/FFN GEMM：AI 在数百 FLOPs/byte 量级以上（h=4096 的方阵 GEMM 理论 AI ≈ h/4 ≈ 10³，见第 3.2 节），远高于 A100 的平衡点（FLOPS/带宽 ≈ 312×10¹² / 2039×10⁹ ≈ 153），属于 compute-bound，**能吃满算力**。
 - 推荐 dense 部分：`d_in × d_out` 的小矩阵乘，AI 常在 **个位数到几十**，落在 memory-bound 区间，算力利用率被带宽卡死。
 - embedding lookup：AI ≈ **接近 0**（拷贝 4~32 字节 × dim，0 FLOPs），纯带宽/延迟型负载。
 
 也就是说，**推荐模型的每个组成部分都处在 Roofline 的斜坡段**，而 LLM 的主体算子处在平台段。
 
-### 3.4 系统层：数据管线、稀疏通信与 CPU-GPU 协同带来大量气泡
+### 4.4 系统层：数据管线、稀疏通信与 CPU-GPU 协同带来大量气泡
 
 MFU 的分母是"峰值算力 × 时间"——GPU 只要有一纳秒没在算有效计算，MFU 就在损失。推荐训练的系统开销远比 LLM 训练复杂：
 
@@ -158,14 +238,14 @@ MFU 的分母是"峰值算力 × 时间"——GPU 只要有一纳秒没在算有
 
 LLM 训练侧这些系统问题同样存在，但因为**每步计算量巨大**（一次 step 的 dense FLOPs 是推荐模型的成千上万倍），通信和数据开销可以被计算完全掩盖（overlap），气泡占比小。
 
-### 3.5 模型结构层面：控制流多、算子碎、负载不均衡
+### 4.5 模型结构层面：控制流多、算子碎、负载不均衡
 
 - 多任务学习（shared-bottom / MMoE / PLE）：多个 tower、多个 loss、gate 网络带来大量小算子和分支控制流。
 - 目标 attention（如 DIN）对每个候选 item 单独计算，是典型的 **batch 内动态循环**，算子粒度极细。
 - 负采样、样本加权、多目标 loss mask 等逻辑引入不规则张量操作。
 - 相比之下 LLM 是**同构层的规则堆叠**（几十上百层完全相同的 transformer block），天然适合 kernel 融合（FlashAttention 这类 fused kernel）与流水线并行。
 
-### 3.6 推理侧为什么差距更大
+### 4.6 推理侧为什么差距更大
 
 **LLM 推理：**
 - 单请求 FLOPs 巨大（每个 token 前向 `≈2N`，7B 模型每 token 1.4×10¹⁰ FLOPs），即使 decode 阶段 memory-bound，经 **continuous batching** 聚合后 GPU 仍能维持较高带宽与算力利用率；prefill 阶段是大 GEMM，compute-bound，MFU 可达 40%+。
@@ -177,13 +257,13 @@ LLM 训练侧这些系统问题同样存在，但因为**每步计算量巨大**
 - **特征工程在 CPU**：请求级特征抽取、ID 哈希、交叉特征计算都在 host 侧，GPU 只是流水线末端的一小段。
 - **集群经济学反差**：LLM 推理一台 8 卡机服务有限并发，GPU 理所当然被算力打满；推荐推理 QPS 极高但单请求太轻，部署上甚至大量使用 CPU 推理（算力需求小、embedding 表大、扩容便宜），GPU 实例也往往被 QPS 切得很碎——**MFU 低是负载特性决定的，不是"没优化好"**。
 
-### 3.7 一张总表
+### 4.7 一张总表
 
 | 根因 | 作用层面 | LLM | 推荐模型 |
 |---|---|---|---|
 | Embedding 参数多但零 FLOPs | 指标/模型 | 参数基本都参与计算 | 99%+ 参数零 FLOPs |
 | 算子形状 | 硬件 | 大 GEMM，Tensor Core 打满 | 小而碎的 GEMM/动态 shape |
-| 算术强度 | 硬件 | 50~200 FLOPs/B，compute-bound | ≈0~几十 FLOPs/B，memory-bound |
+| 算术强度 | 硬件 | 数百~10³ FLOPs/B，compute-bound | ≈0~几十 FLOPs/B，memory-bound |
 | 图编译/融合 | 软件 | 静态图，CUDA Graph/XLA 生效好 | 动态 shape，难编译融合 |
 | 通信 | 系统 | 规整 All-Reduce，可与计算 overlap | All-to-All / PS Pull-Push，碎片化 |
 | 数据管线 | 系统 | 文本 token 化后很轻 | 数百稀疏特征解析拼接，CPU 瓶颈 |
@@ -192,7 +272,7 @@ LLM 训练侧这些系统问题同样存在，但因为**每步计算量巨大**
 
 ---
 
-## 4. 正确看待推荐模型的"低 MFU"
+## 5. 正确看待推荐模型的"低 MFU"
 
 1. **先问指标适不适配**：对大规模稀疏模型，MFU 的分子（理论 FLOPs）定义不清（embedding 零 FLOPs、动态 attention 随输入变化），业界改用端到端吞吐、成本/QPS、GPU 有效计算时间占比等指标。
 2. **低 MFU ≠ 低效**：把 embedding 放 CPU/远端存储是"用廉价内存换 GPU HBM"的理性架构；此时 GPU 只承担 dense 计算，表观 MFU 低但**单位成本样本数（cost per sample）**可能是最优的。
@@ -201,12 +281,13 @@ LLM 训练侧这些系统问题同样存在，但因为**每步计算量巨大**
 
 ---
 
-## 5. 参考
+## 6. 参考
 
 - PaLM 论文（MFU/HFU 定义与 46.2% 基准）：Chowdhery et al., *PaLM: Scaling Language Modeling with Pathways*, 2022, Appendix B。
 - FLOPs 近似公式（6N 与 attention 项）：Kaplan et al., *Scaling Laws for Neural Language Models*, 2020（C=6ND）；PaLM Appendix B（12Lhs 项）。
 - 推荐系统稀疏训练架构与瓶颈：Meta *DLRM: A Deep Learning Recommendation Model*（2019）；百度 *PaddleBox*（KDD 2022）；阿里 *XDL*（KDD 2019）与 *DeepRec*；相关工业界分享（字节、快手大规模稀疏训练系统）。
 - LLM 推理效率：vLLM（*Efficient Memory Management for Large Language Model Serving with PagedAttention*, SOSP 2023）、TensorRT-LLM 技术报告。
 - Roofline 模型：Williams et al., *Roofline: An Insightful Visual Performance Model for Multicore Architectures*, CACM 2009。
+- GEMM 与 BLAS：BLAS 标准（Lawson et al., 1979）；Goto & van de Geijn, *Anatomy of High-Performance Matrix Multiplication*, ACM TOPC 2008（分块与寄存器/缓存层级优化）；NVIDIA cuBLAS / CUTLASS 文档（tile 形状、Tensor Core MMA 与 kernel 调度）。
 
-> 说明：文中标注"说明性"的数字（如 7B 模型示例、推荐模型 FLOPs 量级）为便于理解的量级估算，具体数值随模型结构、序列长度、batch 策略不同而变化；LLM/推荐系统的 MFU 区间为论文与公开技术报告中的典型参考值，非精确界限。
+> 说明：文中标注"说明性"的数字（如 7B 模型示例、GEMM 算术强度示例、推荐模型 FLOPs 量级）为便于理解的量级估算，具体数值随模型结构、序列长度、batch 策略不同而变化；LLM/推荐系统的 MFU 区间为论文与公开技术报告中的典型参考值，非精确界限。
