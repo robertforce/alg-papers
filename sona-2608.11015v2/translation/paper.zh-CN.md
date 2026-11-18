@@ -115,21 +115,21 @@ SONA 将下一首歌曲推荐表述为条件序列生成。编码器接收带类
 
 **协同细化。** 仅内容特征无法显式表达可替代性：听众认为可互换的歌曲在内容向量空间未必相邻 [9,32]。因此，细化 Transformer 使用协同关联歌曲对训练，使收听模式相似的歌曲获得相近向量，并在量化后共享前缀。损失包括：
 
-```math
+$$
 \mathcal{L}=\mathcal{L}_{\mathrm{InfoNCE}}+\lambda_{\mathrm{align}}\mathcal{L}_{\mathrm{align}}.
-```
+$$
 
 一批 m 个歌曲对产生 2m 个细化向量，批中歌曲 a 的表示为 zₐ。每个向量都作为一次锚点，其配对歌曲为正样本，其他 2m−2 个向量为负样本：
 
-```math
+$$
 \mathcal{L}_{\mathrm{InfoNCE}}=-\frac{1}{2m}\sum_{a=1}^{2m}\log\frac{\exp(\operatorname{sim}(z_a,z_{a^+})/\tau)}{\sum_{b\ne a}\exp(\operatorname{sim}(z_a,z_b)/\tau)}.
-```
+$$
 
 sim 为余弦相似度，τ 为温度。对齐项使向量接近该歌曲内容特征的均值：
 
-```math
+$$
 \mathcal{L}_{\mathrm{align}}=\frac{1}{2m}\sum_{a=1}^{2m}\|z_a-\bar h_a\|^2,\qquad\lambda_{\mathrm{align}}=0.1.
-```
+$$
 
 ![内容提取、协同细化、残差量化流程](../source/assets/fig-3-1.png)
 
@@ -137,9 +137,9 @@ sim 为余弦相似度，τ 为温度。对齐项使向量接近该歌曲内容�
 
 **协同歌曲对。** 两个来源挖掘歌曲对。Target-wise 数据流收集生产推荐器同一次响应中共同展示的物品集合。生产系统不会在一次响应中放入同一艺人的歌曲，因此这些共现天然跨艺人。NPMI 数据流使用归一化点互信息衡量歌曲 i、j 的共同收听：
 
-```math
+$$
 \operatorname{NPMI}(i,j)=\frac{1}{-\log p(i,j)}\log\frac{p(i,j)}{p(i)p(j)}.
-```
+$$
 
 p(i,j) 为三个月窗口内两首歌共同出现在用户收听日志中的概率，p(i)、p(j) 为边缘概率。只保留同一艺人的高 NPMI 对，因此两种数据流不重叠。两者在训练前拼接并打乱。
 
@@ -156,9 +156,9 @@ p(i,j) 为三个月窗口内两首歌共同出现在用户收听日志中的概�
 
 编码器输入来自日志交互历史。某次请求的历史为：
 
-```math
+$$
 u=(e_1,\ldots,e_T),\qquad T\le T_{\max}.
-```
+$$
 
 每个事件是一次过去交互。训练与线上采用相同选择规则；不足最大长度的历史用同一个可学习向量填充所有缺失位置。
 
@@ -174,31 +174,31 @@ u=(e_1,\ldots,e_T),\qquad T\le T_{\max}.
 
 **连续特征。** 歌曲时长与播放完成率均分桶后嵌入，不直接使用原始标量：
 
-```math
+$$
 \rho_t=\frac{p_t}{\max(d_t,\epsilon)},
-```
+$$
 
 其中 pₜ 为播放时长，dₜ 为歌曲时长。
 
 **事件 token。** 物品嵌入器拼接五个哈希身份特征与时长嵌入，再投影到 d 维；上下文及反馈嵌入器把各属性直接嵌入到 d 维后求和。事件 token 是三者之和：
 
-```math
+$$
 x_t=\operatorname{ItemEmb}(e_t)+\operatorname{ContextEmb}(e_t)+\operatorname{FeedbackEmb}(e_t).
-```
+$$
 
 **编码器输入。** 在序列开头加入可学习 CLS token 作为全局汇总位置：
 
-```math
+$$
 X=[x_{\mathrm{CLS}},x_1,\ldots,x_T].
-```
+$$
 
 ### 3.3 编码器〔第 9—10 页〕
 
 完整编码器的隐藏状态矩阵为：
 
-```math
+$$
 H=\operatorname{Enc}_{\theta}(X),\qquad H\in\mathbb R^{(T+1)\times d}.
-```
+$$
 
 解码器与排序模块使用每次请求只计算一次的共享编码器记忆 K。H 表示编码器直接输出，K 表示提供给下游的接口。完整编码器下 K=H；历史压缩不构造所有位置的全深度 H，而使用长期浅层表示与近期深层表示拼接的 K。
 
@@ -209,9 +209,9 @@ H=\operatorname{Enc}_{\theta}(X),\qquad H\in\mathbb R^{(T+1)\times d}.
 3. **仅近期块的深层网络。** 七层自注意力承载大部分编码器容量，仅细化 Xᵣ，得到 Hᵣ。
 4. **拼接输出。** 下游交叉注意力读取：
 
-```math
+$$
 K=[X_O;H_R].
-```
+$$
 
 所有 N 个位置对下游可见，仅最近 nᵣ 个具有深层编码。
 
@@ -221,15 +221,15 @@ K=[X_O;H_R].
 
 **成本。** 完整 L 层编码器的注意力成本为：
 
-```math
+$$
 \Theta(LN^2d).
-```
+$$
 
 本方法仅在近期块支付深层成本，总注意力成本降为：
 
-```math
+$$
 \Theta\big((Ln_r^2+N^2+2n_on_r)d\big).
-```
+$$
 
 节省来自容量分配方式，而非丢弃历史。采用 N=8192、nᵣ=2048，能保留同长度完整 Transformer 的大部分下游性能，推理成本约为其一半（第 7.4 节）。
 
@@ -239,15 +239,15 @@ K=[X_O;H_R].
 
 分词器把目录歌曲 v 映射为 L 级 SID：
 
-```math
+$$
 s(v)=(s_1(v),\ldots,s_L(v)),\qquad L=3.
-```
+$$
 
 解码器是在码本词表上运行的浅层自回归 Transformer（表 B.5）。从 BOS 开始，在编码历史条件下逐级生成：
 
-```math
+$$
 p_\theta(s_1,\ldots,s_L\mid u)=\prod_{\ell=1}^{L}p_\theta(s_\ell\mid s_{<\ell},K).
-```
+$$
 
 **从元组到歌曲。** 线上受约束束搜索利用分词器 trie 屏蔽无效前缀，确保完成的元组至少映射到一首歌曲。码本并非无碰撞：通常少量歌曲共享一个 SID 元组，这是 Rajput 等人形式 [22] 的固有属性。每个元组展开为量化到它的所有歌曲，再交由排序模块排序。
 
@@ -259,9 +259,9 @@ p_\theta(s_1,\ldots,s_L\mid u)=\prod_{\ell=1}^{L}p_\theta(s_\ell\mid s_{<\ell},K
 
 **打分。** 模块大体沿用解码器架构，以候选嵌入为输入，通过 pre-norm 交叉注意力块读取历史 [36]：
 
-```math
+$$
 \tilde e_i=\operatorname{CrossAttnBlocks}(e_i,K),\qquad s_i=\operatorname{Head}(\tilde e_i)\in\mathbb R^n.
-```
+$$
 
 前馈打分层输出 n 个分数，与教师各头对应，通过蒸馏和解码器下一 token 目标联合训练。
 
@@ -287,19 +287,19 @@ SONA 通过生成与排序联合目标训练（图 4.1）。解码器仅使用�
 
 **蒸馏来源。** 蒸馏的用户—候选对来自当前解码器 rollout 和日志曝光。对每个用户历史，束搜索生成 B 个 SID 元组；解析成功的目录物品构成 rollout 候选集，未解析项不参加排序模块打分与损失。该集合再补充请求的日志曝光，使教师监督覆盖生产流量中实际曝光的物品。记教师和排序模块对候选 c 的第 h 头分数分别为 r 和带帽 r，各来源贡献逐头 MAE：
 
-```math
+$$
 \mathcal L_{\mathrm{rollout}}
 =\sum_{h=1}^{n}\frac{1}{|\mathcal B|}\sum_{c\in\mathcal B}|\hat r_c^h-r_c^h|,
 \qquad
 \mathcal L_{\mathrm{impression}}
 =\sum_{h=1}^{n}\frac{1}{|\mathcal I|}\sum_{c\in\mathcal I}|\hat r_c^h-r_c^h|.
-```
+$$
 
 联合目标为：
 
-```math
+$$
 \mathcal L=\mathcal L_{\mathrm{NTP}}+\mathcal L_{\mathrm{rollout}}+\mathcal L_{\mathrm{impression}}.
-```
+$$
 
 ![下一 token 预测和两路候选蒸馏联合训练](../source/assets/fig-4-1.png)
 
@@ -341,15 +341,15 @@ SONA 通过生成与排序联合目标训练（图 4.1）。解码器仅使用�
 
 **微调。** 使用预训练编码器初始化，接入随机初始化的候选打分器，训练多目标排序器。主要目标是成对排序。每次曝光被映射到分级反馈：点赞 > 播放 > 跳过 > 点踩。成对头通过分数差的 logistic 损失，对时间相邻、等级不同的曝光排序。设有序相邻对集合中 i 的等级高于 j：
 
-```math
+$$
 \mathcal L_{\mathrm{pair}}=-\frac{1}{|\mathcal P|}\sum_{(i,j)\in\mathcal P}\log\sigma\big(\operatorname{score}_{\mathrm{pair}}(i)-\operatorname{score}_{\mathrm{pair}}(j)\big).\tag{5.1}
-```
+$$
 
 配对既可发生在同一推荐请求内，也可跨越相邻请求边界；只使用推荐请求实际服务的曝光，使微调保持在排序器的使用分布。辅助目标为逐点二分类，各头在校准 logit 上拟合二元反馈，使用 BCE。所有头联合优化：
 
-```math
+$$
 \mathcal L_{\mathrm{teacher}}=\mathcal L_{\mathrm{pair}}+\sum_k\mathcal L_{\mathrm{BCE}}^k.
-```
+$$
 
 每个曝光组通过第 5.2 节的自定义掩码读取锚点前历史，由专用 Triton kernel [29] 实现。微调读取的历史显著长于预训练，使打分器看到评分时可用的长程上下文。
 
@@ -420,25 +420,25 @@ SONA 联合训练生成与排序，同一步还需要冻结教师评价生成候
 
 **目标歌曲召回率。** 请求 i 有 nᵢ 首目标歌曲，前 k 个解析出的预测歌曲中命中 mᵢ(k) 首。Target-track Recall@k 是在至少有一个目标的留出请求上，对以下比值宏平均：
 
-```math
+$$
 \frac{\min\{m_i(k),k\}}{\min\{n_i,k\}}.
-```
+$$
 
 容量实验改为在相同累计目标曝光量下比较训练 NTP 损失，越低越好。
 
 **教师召回率。** Teacher Recall@k 衡量给定候选生成条件下的排序保真度。对留出请求 r，解码器产生候选池 Cᵣ，教师和排序模块对同一池排序。设请求集为 R，两者标量评分分别为 s：
 
-```math
+$$
 \operatorname{TeacherRecall}@k=\frac{1}{|\mathcal R|}\sum_{r\in\mathcal R}\frac{1}{k}\left|\operatorname{Top}_k(s_{\mathrm{RM}}^{(r)};C_r)\cap\operatorname{Top}_k(s_{\mathrm{teacher}}^{(r)};C_r)\right|.
-```
+$$
 
 交集仅在共同候选池内计算。无排序模块时用解码似然排序。
 
 **加权配对准确率。** WPA 在留出的时间相邻、目标权重不同的曝光对上衡量反馈排序。tᵢ 为预定义反馈目标权重，集合 P 中 tᵢ>tⱼ：
 
-```math
+$$
 \operatorname{WPA}=\frac{\sum_{(i,j)\in\mathcal P}(t_i-t_j)\mathbf1\{\operatorname{score}_{\mathrm{pair}}(i)>\operatorname{score}_{\mathrm{pair}}(j)\}}{\sum_{(i,j)\in\mathcal P}(t_i-t_j)}.\tag{7.1}
-```
+$$
 
 反馈权重差越大的配对贡献越大。三项离线指标均越高越好。
 
